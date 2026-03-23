@@ -1,26 +1,19 @@
-import { Outlet, useParams, Navigate } from 'react-router-dom';
+import { Outlet, useParams, Navigate, useNavigate } from 'react-router-dom';
 import { useTrips } from '@/context/TripContext';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import TripSidebar from '@/components/TripSidebar';
 import { format, parseISO } from 'date-fns';
-import { MapPin, Calendar } from 'lucide-react';
+import { MapPin, Calendar, Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
 
 export default function TripWorkspace() {
   const { tripId } = useParams();
-  const { getTrip, loading } = useTrips();
+  const { getTrip, loading, trips } = useTrips();
+  const navigate = useNavigate();
+
   const trip = getTrip(tripId || '');
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
-
-  if (!trip) return <Navigate to="/dashboard" replace />;
-
-  // Defensive formatting to prevent date-fns from crashing on bad data
+  // Defensive Date Formatting so parseISO doesn't crash on bad data
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return '';
     try {
@@ -29,6 +22,31 @@ export default function TripWorkspace() {
       return '';
     }
   };
+
+  // 1. Wait for TripContext to finish fetching
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground font-medium">Loading workspace...</p>
+      </div>
+    );
+  }
+
+  // 2. If loading is totally finished, and the trip still isn't in the array, redirect safely
+  if (!loading && trips.length > 0 && !trip) {
+    console.warn("Trip not found after loading. Redirecting to Dashboard.");
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // 3. Absolute safety catch: If trips array is totally empty but loading is false
+  if (!trip) {
+     return (
+        <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground font-medium">
+           Synchronizing data...
+        </div>
+     );
+  }
 
   return (
     <SidebarProvider>
