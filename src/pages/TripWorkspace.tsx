@@ -7,8 +7,16 @@ import { MapPin, Calendar } from 'lucide-react';
 
 export default function TripWorkspace() {
   const { tripId } = useParams();
-  const { getTrip } = useTrips();
+  const { getTrip, loading } = useTrips();
   const trip = getTrip(tripId || '');
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
 
   if (!trip) return <Navigate to="/dashboard" replace />;
 
@@ -24,7 +32,7 @@ export default function TripWorkspace() {
               <h1 className="font-display text-lg font-semibold truncate">{trip.title}</h1>
             </div>
             <div className="ml-auto hidden sm:flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{trip.destination}</span>
+              <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{trip.start_destination}</span>
               <span className="flex items-center gap-1">
                 <Calendar className="h-3.5 w-3.5" />
                 {format(parseISO(trip.start_date), 'MMM d')} – {format(parseISO(trip.end_date), 'MMM d')}

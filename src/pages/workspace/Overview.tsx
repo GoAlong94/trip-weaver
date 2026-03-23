@@ -12,10 +12,10 @@ export default function Overview() {
   const days = differenceInDays(parseISO(trip.end_date), parseISO(trip.start_date));
 
   const stats = [
-    { label: 'Destination', value: trip.destination, icon: MapPin },
+    { label: 'Destination', value: trip.start_destination, icon: MapPin },
     { label: 'Duration', value: `${days} days`, icon: Clock },
     { label: 'Dates', value: `${format(parseISO(trip.start_date), 'MMM d')} – ${format(parseISO(trip.end_date), 'MMM d, yyyy')}`, icon: Calendar },
-    { label: 'Members', value: '2', icon: Users },
+    { label: 'Members', value: '—', icon: Users },
   ];
 
   return (

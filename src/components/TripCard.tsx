@@ -1,8 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import { format, isPast, parseISO } from 'date-fns';
 import { Calendar, MapPin } from 'lucide-react';
-import { Trip } from '@/types/trip';
 import { motion } from 'framer-motion';
+import type { Tables } from '@/integrations/supabase/types';
+
+type Trip = Tables<'trips'>;
 
 export default function TripCard({ trip, index }: { trip: Trip; index: number }) {
   const navigate = useNavigate();
@@ -22,7 +24,7 @@ export default function TripCard({ trip, index }: { trip: Trip; index: number })
       </h3>
       <div className="flex items-center gap-1.5 text-muted-foreground text-sm mb-2">
         <MapPin className="h-3.5 w-3.5" />
-        {trip.destination}
+        {trip.start_destination}
       </div>
       <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
         <Calendar className="h-3 w-3" />

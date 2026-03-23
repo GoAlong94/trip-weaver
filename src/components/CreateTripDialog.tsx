@@ -2,16 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTrips } from '@/context/TripContext';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function CreateTripDialog() {
   const [open, setOpen] = useState(false);
@@ -19,16 +16,29 @@ export default function CreateTripDialog() {
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const { addTrip } = useTrips();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !destination || !startDate || !endDate) return;
-    const trip = addTrip({ title, destination, start_date: startDate, end_date: endDate });
-    setOpen(false);
-    setTitle(''); setDestination(''); setStartDate(''); setEndDate('');
-    navigate(`/trip/${trip.id}/overview`);
+    setSubmitting(true);
+    try {
+      const trip = await addTrip({
+        title,
+        start_destination: destination,
+        start_date: startDate,
+        end_date: endDate,
+      });
+      setOpen(false);
+      setTitle(''); setDestination(''); setStartDate(''); setEndDate('');
+      navigate(`/trip/${trip.id}/overview`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create trip');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -61,8 +71,8 @@ export default function CreateTripDialog() {
               <Input id="end" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
             </div>
           </div>
-          <Button type="submit" className="w-full gradient-warm text-primary-foreground shadow-warm font-semibold">
-            Create Trip
+          <Button type="submit" className="w-full gradient-warm text-primary-foreground shadow-warm font-semibold" disabled={submitting}>
+            {submitting ? 'Creating...' : 'Create Trip'}
           </Button>
         </form>
       </DialogContent>

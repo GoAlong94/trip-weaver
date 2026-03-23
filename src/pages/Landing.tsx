@@ -17,14 +17,12 @@ export default function Landing() {
       <header className="flex items-center justify-between px-6 py-4 md:px-12">
         <div className="flex items-center gap-2 text-primary-foreground">
           <Plane className="h-6 w-6 text-primary" />
-          <span className="text-lg font-semibold tracking-tight text-primary-foreground">
-            Wanderloom
-          </span>
+          <span className="text-lg font-semibold tracking-tight text-primary-foreground">Wanderloom</span>
         </div>
         <Button
           variant="outline"
           className="border-primary/30 text-primary-foreground hover:bg-primary/10 hover:text-primary"
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate('/auth')}
         >
           Sign In
         </Button>
@@ -47,7 +45,7 @@ export default function Landing() {
           <Button
             size="lg"
             className="gradient-warm text-primary-foreground shadow-warm px-8 py-6 text-base font-semibold gap-2"
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/auth')}
           >
             Get Started <ArrowRight className="h-4 w-4" />
           </Button>
@@ -60,10 +58,7 @@ export default function Landing() {
           className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-20 max-w-3xl w-full"
         >
           {features.map((f) => (
-            <div
-              key={f.title}
-              className="rounded-xl border border-primary-foreground/10 bg-primary-foreground/5 backdrop-blur-sm p-6 text-left"
-            >
+            <div key={f.title} className="rounded-xl border border-primary-foreground/10 bg-primary-foreground/5 backdrop-blur-sm p-6 text-left">
               <f.icon className="h-8 w-8 text-primary mb-3" />
               <h3 className="text-primary-foreground font-semibold mb-1 font-sans text-base">{f.title}</h3>
               <p className="text-primary-foreground/50 text-sm">{f.desc}</p>
