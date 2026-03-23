@@ -14,7 +14,225 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      expense_splits: {
+        Row: {
+          amount_owed: number
+          expense_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          amount_owed: number
+          expense_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          amount_owed?: number
+          expense_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_splits_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "expenses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expenses: {
+        Row: {
+          amount: number
+          created_at: string
+          date: string
+          description: string | null
+          id: string
+          idea_card_id: string | null
+          paid_by: string
+          trip_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          date?: string
+          description?: string | null
+          id?: string
+          idea_card_id?: string | null
+          paid_by: string
+          trip_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          date?: string
+          description?: string | null
+          id?: string
+          idea_card_id?: string | null
+          paid_by?: string
+          trip_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_idea_card_id_fkey"
+            columns: ["idea_card_id"]
+            isOneToOne: false
+            referencedRelation: "idea_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      idea_cards: {
+        Row: {
+          category: string
+          created_at: string
+          created_by: string
+          id: string
+          is_mandatory: boolean
+          quantity: number
+          status: string
+          title: string
+          trip_id: string
+          unit_cost: number
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          created_by: string
+          id?: string
+          is_mandatory?: boolean
+          quantity?: number
+          status?: string
+          title: string
+          trip_id: string
+          unit_cost?: number
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          is_mandatory?: boolean
+          quantity?: number
+          status?: string
+          title?: string
+          trip_id?: string
+          unit_cost?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "idea_cards_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          id: string
+          name: string | null
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          id: string
+          name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          id?: string
+          name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      trip_members: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["member_role"]
+          trip_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["member_role"]
+          trip_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["member_role"]
+          trip_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_members_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trips: {
+        Row: {
+          cover_emoji: string
+          created_at: string
+          created_by: string
+          end_date: string
+          id: string
+          start_date: string
+          start_destination: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          cover_emoji?: string
+          created_at?: string
+          created_by: string
+          end_date: string
+          id?: string
+          start_date: string
+          start_destination: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          cover_emoji?: string
+          created_at?: string
+          created_by?: string
+          end_date?: string
+          id?: string
+          start_date?: string
+          start_destination?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +241,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      member_role: "Host" | "Member"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +368,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      member_role: ["Host", "Member"],
+    },
   },
 } as const
