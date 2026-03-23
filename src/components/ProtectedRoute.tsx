@@ -5,6 +5,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const { session, loading } = useAuth();
 
   if (loading) {
+    // Render a full-screen spinner while checking auth, preventing children from mounting
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
