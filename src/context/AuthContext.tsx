@@ -85,12 +85,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signOut = async () => {
+const signOut = async () => {
     try {
       await supabase.auth.signOut();
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
+      // Instantly wipe the session state so ProtectedRoute redirects immediately
       setSession(null);
       setProfile(null);
     }
