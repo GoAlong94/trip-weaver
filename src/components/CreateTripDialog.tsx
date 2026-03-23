@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useTrips } from '@/context/TripContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,11 +17,13 @@ import {
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
+const emojis = ['✈️', '🌍', '🏔️', '🌴', '🚢', '🏕️', '🎒', '🗺️'];
+
 export default function CreateTripDialog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
-  const { addTrip } = useTrips(); // Using your context's built-in function
+  const { refetch } = useTrips(); // We ONLY pull refetch from context now
   const navigate = useNavigate();
 
   // Form State
@@ -36,25 +39,57 @@ export default function CreateTripDialog() {
     try {
       if (!user) throw new Error('You must be logged in to create a trip.');
 
-      // Provide fallback dates if the user left them empty to satisfy DB requirements
+      // 1. Prepare Fallback Dates
       const fallbackDate = new Date().toISOString().split('T')[0];
+      const safeStartDate = startDate || fallbackDate;
+      const safeEndDate = endDate || fallbackDate;
+      const emoji = emojis[Math.floor(Math.random() * emojis.length)];
 
-      // addTrip handles the database insert AND the React state update!
-      const newTrip = await addTrip({
-        title,
-        start_destination: destination,
-        start_date: startDate || fallbackDate,
-        end_date: endDate || fallbackDate,
-      });
+      // 2. Perform the Insert directly here (Safest method)
+      const { data: tripData, error: tripError } = await supabase
+        .from('trips')
+        .insert([
+          {
+            title: title,
+            start_destination: destination,
+            start_date: safeStartDate,
+            end_date: safeEndDate,
+            created_by: user.id,
+            cover_emoji: emoji
+          }
+        ])
+        .select()
+        .single();
+
+      if (tripError) throw tripError;
+
+      // 3. Add the creator as Host
+      const { error: memberError } = await supabase
+        .from('trip_members')
+        .insert([
+          {
+            trip_id: tripData.id,
+            user_id: user.id,
+            role: 'Host'
+          }
+        ]);
+
+      if (memberError) throw memberError;
 
       toast.success('Trip created successfully!');
       
-      // Clear form and close modal
+      // 4. Clean up the UI
       setTitle(''); setDestination(''); setStartDate(''); setEndDate('');
       setOpen(false);
       
-      // Navigate to the new workspace!
-      navigate(`/trip/${newTrip.id}/overview`);
+      // 5. Navigate FIRST
+      navigate(`/trip/${tripData.id}/overview`);
+      
+      // 6. Tell the global state to update silently in the background
+      // Using optional chaining just in case the context is unmounting
+      if (refetch) {
+        refetch();
+      }
       
     } catch (error: any) {
       console.error("Trip creation error:", error);
