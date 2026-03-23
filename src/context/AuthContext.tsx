@@ -15,7 +15,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<AuthContextValue['profile']>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Initial load only
 
   useEffect(() => {
     let mounted = true;
@@ -28,13 +28,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('id', userId)
           .single();
         
-        if (error) throw error;
+        if (error && error.code !== 'PGRST116') {
+            console.error('Profile fetch error:', error);
+        }
         if (mounted) setProfile(data);
       } catch (error) {
-        console.error('Error fetching profile:', error);
-        if (mounted) setProfile(null);
+        console.error('Error in fetchProfile block:', error);
       } finally {
-        // THIS is what fixes the infinite loading. It forces loading to false no matter what.
         if (mounted) setLoading(false);
       }
     };
@@ -44,7 +44,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
         
-        if (mounted) setSession(session);
+        if (mounted) {
+            setSession(session);
+        }
         
         if (session?.user) {
           await fetchProfile(session.user.id);
@@ -55,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (error) {
-        console.error('Error getting session:', error);
+        console.error('Auth Init Error:', error);
         if (mounted) setLoading(false);
       }
     };
@@ -64,17 +66,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
-        if (mounted) {
-          setSession(newSession);
-          //setLoading(true);
-        }
+        if (!mounted) return;
+        
+        setSession(newSession);
+        
+        // Critical: Do NOT set loading=true here. It causes infinite loops on token refresh.
         if (newSession?.user) {
-          await fetchProfile(newSession.user.id);
+           // Silently fetch profile in background
+           fetchProfile(newSession.user.id);
         } else {
-          if (mounted) {
-            setProfile(null);
-            setLoading(false);
-          }
+           setProfile(null);
+           // Only ensure loading is false if we are logging out
+           setLoading(false);
         }
       }
     );
@@ -85,16 +88,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-const signOut = async () => {
-    // 1. Instantly wipe local state so the app redirects to the login screen immediately
+  const signOut = async () => {
+    // Clear state immediately for fast UI feedback
     setSession(null);
     setProfile(null);
     
-    // 2. Then try to tell the server we logged out in the background
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      console.error("Logout error:", error);
+      console.error("Supabase signOut error:", error);
     }
   };
 
