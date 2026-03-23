@@ -11,6 +11,8 @@ interface TripContextValue {
   loading: boolean;
   getTrip: (id: string) => Trip | undefined;
   refetch: () => Promise<void>;
+  updateTrip: (id: string, updates: Partial<Trip>) => Promise<void>;
+  deleteTrip: (id: string) => Promise<void>;
 }
 
 const TripContext = createContext<TripContextValue | null>(null);
@@ -27,7 +29,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchTrips = useCallback(async () => {
-    if (authLoading) return; // Wait for auth to settle
+    if (authLoading) return; 
     
     if (!user) { 
         if (isMounted.current) {
@@ -56,15 +58,46 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, authLoading]);
 
-  // Refetch when user changes
   useEffect(() => { 
       fetchTrips(); 
   }, [fetchTrips]);
 
   const getTrip = useCallback((id: string) => trips.find(t => t.id === id), [trips]);
 
+  const updateTrip = async (id: string, updates: Partial<Trip>) => {
+    try {
+      const { error } = await supabase.from('trips').update(updates).eq('id', id);
+      if (error) throw error;
+      
+      // Update local state instantly
+      setTrips(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+      toast.success('Trip updated');
+    } catch (error: any) {
+      console.error('Error updating trip:', error);
+      toast.error(error.message || 'Failed to update trip');
+      throw error;
+    }
+  };
+
+  const deleteTrip = async (id: string) => {
+    try {
+      // Because we have foreign keys (trip_members, idea_cards), Supabase handles cascading deletes 
+      // if configured, otherwise we just delete the trip and let RLS block access to orphans.
+      const { error } = await supabase.from('trips').delete().eq('id', id);
+      if (error) throw error;
+
+      // Remove from local state
+      setTrips(prev => prev.filter(t => t.id !== id));
+      toast.success('Trip deleted');
+    } catch (error: any) {
+      console.error('Error deleting trip:', error);
+      toast.error(error.message || 'Failed to delete trip');
+      throw error;
+    }
+  };
+
   return (
-    <TripContext.Provider value={{ trips, loading, getTrip, refetch: fetchTrips }}>
+    <TripContext.Provider value={{ trips, loading, getTrip, refetch: fetchTrips, updateTrip, deleteTrip }}>
       {children}
     </TripContext.Provider>
   );
