@@ -1,64 +1,77 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Trip } from '@/types/trip';
-import { useAuth } from './AuthContext';
+import { useAuth } from '@/context/AuthContext';
+import type { Tables } from '@/integrations/supabase/types';
 import { toast } from 'sonner';
 
-interface TripContextType {
+type Trip = Tables<'trips'>;
+
+interface TripContextValue {
   trips: Trip[];
   loading: boolean;
-  refreshTrips: () => Promise<void>;
+  getTrip: (id: string) => Trip | undefined;
+  refetch: () => Promise<void>;
 }
 
-const TripContext = createContext<TripContextType | undefined>(undefined);
+const TripContext = createContext<TripContextValue | null>(null);
 
 export function TripProvider({ children }: { children: React.ReactNode }) {
+  const { user, loading: authLoading } = useAuth();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
-  const { session, loading: authLoading } = useAuth(); // Depend on Auth state
+  const isMounted = useRef(true);
 
-  const fetchTrips = async () => {
-    // If auth is still loading, wait. If no session, stop loading immediately.
-    if (authLoading) return;
-    if (!session?.user) {
-      setTrips([]);
-      setLoading(false);
-      return;
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
+  const fetchTrips = useCallback(async () => {
+    if (authLoading) return; // Wait for auth to settle
+    
+    if (!user) { 
+        if (isMounted.current) {
+            setTrips([]); 
+            setLoading(false); 
+        }
+        return; 
     }
 
     try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('trips')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setTrips(data || []);
-    } catch (error: any) {
-      console.error('Error fetching trips:', error);
-      toast.error('Failed to load trips');
+        if (isMounted.current) setLoading(true);
+        const { data, error } = await supabase
+            .from('trips')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (isMounted.current) {
+            setTrips(data || []);
+        }
+    } catch (error) {
+        console.error("Error fetching trips:", error);
     } finally {
-      setLoading(false); // ALWAYS turn off loading
+        if (isMounted.current) setLoading(false);
     }
-  };
+  }, [user, authLoading]);
 
-  // Re-run fetchTrips whenever the auth session changes
-  useEffect(() => {
-    fetchTrips();
-  }, [session, authLoading]);
+  // Refetch when user changes
+  useEffect(() => { 
+      fetchTrips(); 
+  }, [fetchTrips]);
+
+  const getTrip = useCallback((id: string) => trips.find(t => t.id === id), [trips]);
 
   return (
-    <TripContext.Provider value={{ trips, loading, refreshTrips: fetchTrips }}>
+    <TripContext.Provider value={{ trips, loading, getTrip, refetch: fetchTrips }}>
       {children}
     </TripContext.Provider>
   );
 }
 
-export const useTrips = () => {
-  const context = useContext(TripContext);
-  if (context === undefined) {
-    throw new Error('useTrips must be used within a TripProvider');
-  }
-  return context;
-};
+export function useTrips() {
+  const ctx = useContext(TripContext);
+  if (!ctx) throw new Error('useTrips must be inside TripProvider');
+  return ctx;
+}
