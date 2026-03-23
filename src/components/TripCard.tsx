@@ -8,7 +8,16 @@ type Trip = Tables<'trips'>;
 
 export default function TripCard({ trip, index }: { trip: Trip; index: number }) {
   const navigate = useNavigate();
-  const past = isPast(parseISO(trip.end_date));
+  
+  // Safe date parsing to prevent crashes
+  const safeParseDate = (dateStr: string | null) => {
+    if (!dateStr) return null;
+    try { return parseISO(dateStr); } catch { return null; }
+  };
+
+  const startDate = safeParseDate(trip.start_date);
+  const endDate = safeParseDate(trip.end_date);
+  const past = endDate ? isPast(endDate) : false;
 
   return (
     <motion.button
@@ -28,7 +37,7 @@ export default function TripCard({ trip, index }: { trip: Trip; index: number })
       </div>
       <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
         <Calendar className="h-3 w-3" />
-        {format(parseISO(trip.start_date), 'MMM d')} – {format(parseISO(trip.end_date), 'MMM d, yyyy')}
+        {startDate ? format(startDate, 'MMM d') : 'TBD'} – {endDate ? format(endDate, 'MMM d, yyyy') : 'TBD'}
       </div>
       {past && (
         <span className="mt-3 inline-block text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
