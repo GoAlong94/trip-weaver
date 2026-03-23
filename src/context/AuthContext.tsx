@@ -86,14 +86,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
 const signOut = async () => {
+    // 1. Instantly wipe local state so the app redirects to the login screen immediately
+    setSession(null);
+    setProfile(null);
+    
+    // 2. Then try to tell the server we logged out in the background
     try {
       await supabase.auth.signOut();
     } catch (error) {
       console.error("Logout error:", error);
-    } finally {
-      // Instantly wipe the session state so ProtectedRoute redirects immediately
-      setSession(null);
-      setProfile(null);
     }
   };
 
