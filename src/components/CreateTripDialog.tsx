@@ -35,21 +35,23 @@ export default function CreateTripDialog() {
     try {
       if (!user) throw new Error('You must be logged in to create a trip.');
 
-      // 1. Prepare the payload dynamically
-      const newTripData: any = {
-        title: title,
-        start_destination: destination,
-        created_by: user.id
-      };
+      // Because the DB requires start_date and end_date, we must provide them.
+      // If the user left them blank, default to today's date.
+      const today = new Date().toISOString().split('T')[0];
+      const safeStartDate = startDate || today;
+      const safeEndDate = endDate || today;
 
-      // Only attach dates to the payload if the user actually selected them
-      if (startDate) newTripData.start_date = startDate;
-      if (endDate) newTripData.end_date = endDate;
-
-      // 2. Insert the Trip
       const { data: tripData, error: tripError } = await supabase
         .from('trips')
-        .insert([newTripData])
+        .insert([
+          {
+            title: title,
+            start_destination: destination,
+            start_date: safeStartDate,
+            end_date: safeEndDate,
+            created_by: user.id
+          }
+        ])
         .select()
         .single();
 
