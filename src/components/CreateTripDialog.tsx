@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useTrips } from '@/context/TripContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +21,7 @@ export default function CreateTripDialog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
+  const { refreshTrips } = useTrips();
   const navigate = useNavigate();
 
   // Form State
@@ -35,23 +37,23 @@ export default function CreateTripDialog() {
     try {
       if (!user) throw new Error('You must be logged in to create a trip.');
 
-      // Because the DB requires start_date and end_date, we must provide them.
-      // If the user left them blank, default to today's date.
-      const today = new Date().toISOString().split('T')[0];
-      const safeStartDate = startDate || today;
-      const safeEndDate = endDate || today;
+      // 1. Prepare the payload dynamically
+      const newTripData: any = {
+        title: title,
+        start_destination: destination,
+        created_by: user.id
+      };
 
+      // Only attach dates to the payload if the user actually selected them
+      // Alternatively, you can use a fallback like `startDate || new Date().toISOString().split('T')[0]` 
+      // if your database STRICTLY requires a date.
+      if (startDate) newTripData.start_date = startDate;
+      if (endDate) newTripData.end_date = endDate;
+
+      // 2. Insert the Trip
       const { data: tripData, error: tripError } = await supabase
         .from('trips')
-        .insert([
-          {
-            title: title,
-            start_destination: destination,
-            start_date: safeStartDate,
-            end_date: safeEndDate,
-            created_by: user.id
-          }
-        ])
+        .insert([newTripData])
         .select()
         .single();
 
@@ -74,12 +76,15 @@ export default function CreateTripDialog() {
       if (memberError) throw memberError;
 
       toast.success('Trip created successfully!');
+      
+      // 4. Refresh global state BEFORE navigating to prevent crash
+      await refreshTrips();
+      
+      // 5. Clear form and close modal
+      setTitle(''); setDestination(''); setStartDate(''); setEndDate('');
       setOpen(false);
       
-      // Clear form
-      setTitle(''); setDestination(''); setStartDate(''); setEndDate('');
-      
-      // 4. Navigate to the new workspace
+      // 6. Navigate to the new workspace
       navigate(`/trip/${tripData.id}/overview`);
       
     } catch (error: any) {
