@@ -20,6 +20,16 @@ export default function TripWorkspace() {
 
   if (!trip) return <Navigate to="/dashboard" replace />;
 
+  // Defensive formatting to prevent date-fns from crashing on bad data
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return '';
+    try {
+      return format(parseISO(dateString), 'MMM d');
+    } catch (e) {
+      return '';
+    }
+  };
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
@@ -35,7 +45,7 @@ export default function TripWorkspace() {
               <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{trip.start_destination}</span>
               <span className="flex items-center gap-1">
                 <Calendar className="h-3.5 w-3.5" />
-                {format(parseISO(trip.start_date), 'MMM d')} – {format(parseISO(trip.end_date), 'MMM d')}
+                {formatDate(trip.start_date)} – {formatDate(trip.end_date)}
               </span>
             </div>
           </header>
