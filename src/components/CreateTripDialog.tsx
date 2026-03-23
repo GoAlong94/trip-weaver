@@ -35,18 +35,21 @@ export default function CreateTripDialog() {
     try {
       if (!user) throw new Error('You must be logged in to create a trip.');
 
-      // 1. Insert the Trip (Explicitly sending created_by)
+      // 1. Prepare the payload dynamically
+      const newTripData: any = {
+        title: title,
+        start_destination: destination,
+        created_by: user.id
+      };
+
+      // Only attach dates to the payload if the user actually selected them
+      if (startDate) newTripData.start_date = startDate;
+      if (endDate) newTripData.end_date = endDate;
+
+      // 2. Insert the Trip
       const { data: tripData, error: tripError } = await supabase
         .from('trips')
-        .insert([
-          {
-            title: title,
-            start_destination: destination,
-            start_date: startDate || null,
-            end_date: endDate || null,
-            created_by: user.id // THIS LINE IS CRITICAL
-          }
-        ])
+        .insert([newTripData])
         .select()
         .single();
 
@@ -55,7 +58,7 @@ export default function CreateTripDialog() {
         throw new Error(tripError.message);
       }
 
-      // 2. Add the creator as an Admin member of the trip
+      // 3. Add the creator as a Host member of the trip
       const { error: memberError } = await supabase
         .from('trip_members')
         .insert([
@@ -74,7 +77,7 @@ export default function CreateTripDialog() {
       // Clear form
       setTitle(''); setDestination(''); setStartDate(''); setEndDate('');
       
-      // 3. Navigate to the new workspace
+      // 4. Navigate to the new workspace
       navigate(`/trip/${tripData.id}/overview`);
       
     } catch (error: any) {
@@ -129,7 +132,7 @@ export default function CreateTripDialog() {
                 type="date" 
                 value={startDate} 
                 onChange={e => setStartDate(e.target.value)} 
-                required 
+                // Removed 'required' so you can test empty dates safely
               />
             </div>
             <div className="space-y-2">
@@ -139,7 +142,7 @@ export default function CreateTripDialog() {
                 type="date" 
                 value={endDate} 
                 onChange={e => setEndDate(e.target.value)} 
-                required 
+                // Removed 'required' so you can test empty dates safely
               />
             </div>
           </div>
