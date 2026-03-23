@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useTrips } from '@/context/TripContext';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,7 +20,7 @@ export default function CreateTripDialog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
-  const { refreshTrips } = useTrips();
+  const { addTrip } = useTrips(); // Using your context's built-in function
   const navigate = useNavigate();
 
   // Form State
@@ -37,55 +36,25 @@ export default function CreateTripDialog() {
     try {
       if (!user) throw new Error('You must be logged in to create a trip.');
 
-      // 1. Prepare the payload dynamically
-      const newTripData: any = {
-        title: title,
+      // Provide fallback dates if the user left them empty to satisfy DB requirements
+      const fallbackDate = new Date().toISOString().split('T')[0];
+
+      // addTrip handles the database insert AND the React state update!
+      const newTrip = await addTrip({
+        title,
         start_destination: destination,
-        created_by: user.id
-      };
-
-      // Only attach dates to the payload if the user actually selected them
-      // Alternatively, you can use a fallback like `startDate || new Date().toISOString().split('T')[0]` 
-      // if your database STRICTLY requires a date.
-      if (startDate) newTripData.start_date = startDate;
-      if (endDate) newTripData.end_date = endDate;
-
-      // 2. Insert the Trip
-      const { data: tripData, error: tripError } = await supabase
-        .from('trips')
-        .insert([newTripData])
-        .select()
-        .single();
-
-      if (tripError) {
-        console.error("Database error creating trip:", tripError);
-        throw new Error(tripError.message);
-      }
-
-      // 3. Add the creator as a Host member of the trip
-      const { error: memberError } = await supabase
-        .from('trip_members')
-        .insert([
-          {
-            trip_id: tripData.id,
-            user_id: user.id,
-            role: 'Host'
-          }
-        ]);
-
-      if (memberError) throw memberError;
+        start_date: startDate || fallbackDate,
+        end_date: endDate || fallbackDate,
+      });
 
       toast.success('Trip created successfully!');
       
-      // 4. Refresh global state BEFORE navigating to prevent crash
-      await refreshTrips();
-      
-      // 5. Clear form and close modal
+      // Clear form and close modal
       setTitle(''); setDestination(''); setStartDate(''); setEndDate('');
       setOpen(false);
       
-      // 6. Navigate to the new workspace
-      navigate(`/trip/${tripData.id}/overview`);
+      // Navigate to the new workspace!
+      navigate(`/trip/${newTrip.id}/overview`);
       
     } catch (error: any) {
       console.error("Trip creation error:", error);
@@ -139,7 +108,6 @@ export default function CreateTripDialog() {
                 type="date" 
                 value={startDate} 
                 onChange={e => setStartDate(e.target.value)} 
-                // Removed 'required' so you can test empty dates safely
               />
             </div>
             <div className="space-y-2">
@@ -149,7 +117,6 @@ export default function CreateTripDialog() {
                 type="date" 
                 value={endDate} 
                 onChange={e => setEndDate(e.target.value)} 
-                // Removed 'required' so you can test empty dates safely
               />
             </div>
           </div>
