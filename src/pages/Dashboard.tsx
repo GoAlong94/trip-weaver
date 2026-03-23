@@ -16,14 +16,9 @@ export default function Dashboard() {
   const pastTrips = trips.filter(t => isPast(parseISO(t.end_date)));
 
 const handleLogout = async () => {
-    try {
-      await signOut();
-    } catch (error) {
-      console.error("Failed to sign out", error);
-    } finally {
-      // We force the redirect to the auth page in the finally block
-      navigate('/auth', { replace: true });
-    }
+    // Simply clear the session. Do not call navigate() here.
+    // The <ProtectedRoute> component will detect the null session and redirect safely.
+    await signOut();
   };
 
   return (
