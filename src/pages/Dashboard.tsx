@@ -15,9 +15,15 @@ export default function Dashboard() {
   const activeTrips = trips.filter(t => !isPast(parseISO(t.end_date)));
   const pastTrips = trips.filter(t => isPast(parseISO(t.end_date)));
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/');
+const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Failed to sign out", error);
+    } finally {
+      // We force the redirect to the auth page in the finally block
+      navigate('/auth', { replace: true });
+    }
   };
 
   return (
