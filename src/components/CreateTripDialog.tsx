@@ -35,7 +35,7 @@ export default function CreateTripDialog() {
     try {
       if (!user) throw new Error('You must be logged in to create a trip.');
 
-      // 1. Insert the Trip (Forcing the created_by explicitly)
+      // 1. Insert the Trip (Explicitly sending created_by)
       const { data: tripData, error: tripError } = await supabase
         .from('trips')
         .insert([
@@ -44,13 +44,16 @@ export default function CreateTripDialog() {
             start_destination: destination,
             start_date: startDate || null,
             end_date: endDate || null,
-            created_by: user.id // <-- ADD THIS LINE
+            created_by: user.id // THIS LINE IS CRITICAL
           }
         ])
         .select()
         .single();
 
-      if (tripError) throw tripError;
+      if (tripError) {
+        console.error("Database error creating trip:", tripError);
+        throw new Error(tripError.message);
+      }
 
       // 2. Add the creator as an Admin member of the trip
       const { error: memberError } = await supabase
