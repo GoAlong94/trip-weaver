@@ -66,7 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async (_event, newSession) => {
         if (mounted) {
           setSession(newSession);
-          setLoading(true);
+          //setLoading(true);
         }
         if (newSession?.user) {
           await fetchProfile(newSession.user.id);
