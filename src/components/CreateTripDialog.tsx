@@ -35,15 +35,16 @@ export default function CreateTripDialog() {
     try {
       if (!user) throw new Error('You must be logged in to create a trip.');
 
-      // 1. Insert the Trip (Letting DB handle the UUID and created_by)
+      // 1. Insert the Trip (Forcing the created_by explicitly)
       const { data: tripData, error: tripError } = await supabase
         .from('trips')
         .insert([
           {
             title: title,
             start_destination: destination,
-            start_date: startDate || null, // Handle empty dates properly
+            start_date: startDate || null,
             end_date: endDate || null,
+            created_by: user.id // <-- ADD THIS LINE
           }
         ])
         .select()
