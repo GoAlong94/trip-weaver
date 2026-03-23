@@ -1,4 +1,4 @@
-import { useLocation, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { LayoutDashboard, Lightbulb, Clock, TrendingUp, Receipt, ArrowLeft } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
@@ -9,7 +9,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from '@/components/ui/sidebar';
 
 const tabs = [
@@ -22,8 +21,6 @@ const tabs = [
 
 export default function TripSidebar() {
   const { tripId } = useParams();
-  const { state } = useSidebar();
-  const collapsed = state === 'collapsed';
 
   return (
     <Sidebar collapsible="icon">
@@ -35,7 +32,7 @@ export default function TripSidebar() {
                 <SidebarMenuButton asChild>
                   <NavLink to="/dashboard" className="hover:bg-sidebar-accent/50" activeClassName="">
                     <ArrowLeft className="mr-2 h-4 w-4" />
-                    {!collapsed && <span className="text-sm">All Trips</span>}
+                    <span>All Trips</span>
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -55,7 +52,7 @@ export default function TripSidebar() {
                       activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
                     >
                       <tab.icon className="mr-2 h-4 w-4" />
-                      {!collapsed && <span>{tab.title}</span>}
+                      <span>{tab.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
