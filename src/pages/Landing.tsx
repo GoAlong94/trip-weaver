@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Plane, ArrowRight, Map, Users, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/context/AuthContext'; // Import the Auth context
 
 const features = [
   { icon: Map, title: 'Plan Visually', desc: 'Kanban boards & day-by-day timelines' },
@@ -11,6 +12,7 @@ const features = [
 
 export default function Landing() {
   const navigate = useNavigate();
+  const { session } = useAuth(); // Safely pull session
 
   return (
     <div className="min-h-screen gradient-hero flex flex-col">
@@ -19,13 +21,23 @@ export default function Landing() {
           <Plane className="h-6 w-6 text-primary" />
           <span className="text-lg font-semibold tracking-tight text-primary-foreground">Wanderloom</span>
         </div>
-        <Button
-          variant="outline"
-          className="border-primary/30 text-primary-foreground hover:bg-primary/10 hover:text-primary"
-          onClick={() => navigate('/auth')}
-        >
-          Sign In
-        </Button>
+        {session ? (
+          <Button
+            variant="outline"
+            className="border-primary/30 text-primary-foreground hover:bg-primary/10 hover:text-primary"
+            onClick={() => navigate('/dashboard')}
+          >
+            Dashboard
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            className="border-primary/30 text-primary-foreground hover:bg-primary/10 hover:text-primary"
+            onClick={() => navigate('/auth')}
+          >
+            Sign In
+          </Button>
+        )}
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-center px-6 text-center">
@@ -42,13 +54,24 @@ export default function Landing() {
           <p className="text-lg md:text-xl text-primary-foreground/60 mb-10 max-w-lg mx-auto">
             Organize itineraries, coordinate with friends, and split costs — all in one beautiful workspace.
           </p>
-          <Button
-            size="lg"
-            className="gradient-warm text-primary-foreground shadow-warm px-8 py-6 text-base font-semibold gap-2"
-            onClick={() => navigate('/auth')}
-          >
-            Get Started <ArrowRight className="h-4 w-4" />
-          </Button>
+          
+          {session ? (
+            <Button
+              size="lg"
+              className="gradient-warm text-primary-foreground shadow-warm px-8 py-6 text-base font-semibold gap-2"
+              onClick={() => navigate('/dashboard')}
+            >
+              Go to Dashboard <ArrowRight className="h-4 w-4" />
+            </Button>
+          ) : (
+             <Button
+              size="lg"
+              className="gradient-warm text-primary-foreground shadow-warm px-8 py-6 text-base font-semibold gap-2"
+              onClick={() => navigate('/auth')}
+            >
+              Get Started <ArrowRight className="h-4 w-4" />
+            </Button>
+          )}
         </motion.div>
 
         <motion.div
