@@ -27,8 +27,11 @@ export default function Auth() {
     );
   }
 
+  // Support redirect after login (e.g. from invite links)
+  const redirectParam = new URLSearchParams(window.location.search).get('redirect');
+
   if (session) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={redirectParam || '/dashboard'} replace />;
   }
 
   const handleEmailAuth = async (e: React.FormEvent) => {

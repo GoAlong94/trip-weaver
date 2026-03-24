@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams, useNavigate, Navigate } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-type JoinState = 'loading' | 'joining' | 'success' | 'already_member' | 'error';
+type JoinState = 'loading' | 'joining' | 'success' | 'already_member' | 'error' | 'need_auth';
 
 export default function JoinTrip() {
   const { tripId } = useParams();
@@ -18,11 +18,13 @@ export default function JoinTrip() {
   const [errorMsg, setErrorMsg] = useState('');
   const [tripTitle, setTripTitle] = useState('');
 
-  // If not logged in, redirect to auth with a return URL
-  if (!authLoading && !session) {
-    const returnUrl = `/join/${tripId}?code=${code}`;
-    return <Navigate to={`/auth?redirect=${encodeURIComponent(returnUrl)}`} replace />;
-  }
+  // Redirect to auth if not logged in
+  useEffect(() => {
+    if (!authLoading && !session) {
+      const returnUrl = `/join/${tripId}?code=${code}`;
+      navigate(`/auth?redirect=${encodeURIComponent(returnUrl)}`, { replace: true });
+    }
+  }, [authLoading, session, tripId, code, navigate]);
 
   useEffect(() => {
     if (!user || !tripId || !code) return;
@@ -53,14 +55,12 @@ export default function JoinTrip() {
         return;
       }
 
-      // Check expiration
       if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
         setState('error');
         setErrorMsg('This invite link has expired.');
         return;
       }
 
-      // Check max uses
       if (invite.max_uses && invite.use_count >= invite.max_uses) {
         setState('error');
         setErrorMsg('This invite link has reached its maximum number of uses.');
@@ -76,7 +76,6 @@ export default function JoinTrip() {
         .maybeSingle();
 
       if (existing) {
-        // Fetch trip title for display
         const { data: tripData } = await supabase.from('trips').select('title').eq('id', tripId).single();
         setTripTitle(tripData?.title || 'this trip');
         setState('already_member');
@@ -91,13 +90,12 @@ export default function JoinTrip() {
 
       if (memberErr) throw memberErr;
 
-      // 4. Increment use_count (best effort, don't block on error)
+      // 4. Increment use_count (best effort)
       await supabase
         .from('trip_invites')
         .update({ use_count: invite.use_count + 1 })
         .eq('id', invite.id);
 
-      // Fetch trip title for display
       const { data: tripData } = await supabase.from('trips').select('title').eq('id', tripId).single();
       setTripTitle(tripData?.title || 'the trip');
       setState('success');
@@ -131,7 +129,7 @@ export default function JoinTrip() {
 
         {state === 'success' && (
           <>
-            <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto" />
+            <CheckCircle2 className="h-16 w-16 text-primary mx-auto" />
             <h1 className="text-2xl font-display font-bold">You're in! 🎉</h1>
             <p className="text-muted-foreground">
               You've been added to <span className="font-semibold text-foreground">{tripTitle}</span>.
