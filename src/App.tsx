@@ -43,6 +43,7 @@ const App = () => (
                 <Route path="forecast" element={<PlaceholderTab />} />
                 <Route path="ledger" element={<PlaceholderTab />} />
               </Route>
+              <Route path="/join/:tripId" element={<JoinTrip />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
