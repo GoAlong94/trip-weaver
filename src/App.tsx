@@ -12,7 +12,8 @@ import Dashboard from "./pages/Dashboard";
 import TripWorkspace from "./pages/TripWorkspace";
 import Overview from "./pages/workspace/Overview";
 import IdeaBoard from "./pages/workspace/IdeaBoard";
-import Timeline from "./pages/workspace/Timeline"; // NEW IMPORT
+import Timeline from "./pages/workspace/Timeline"; 
+import DateVoting from "./pages/workspace/DateVoting";
 import PlaceholderTab from "./pages/workspace/PlaceholderTab";
 import JoinTrip from "./pages/JoinTrip";
 import NotFound from "./pages/NotFound";
@@ -38,8 +39,9 @@ const App = () => (
               }>
                 <Route index element={<Navigate to="overview" replace />} />
                 <Route path="overview" element={<Overview />} />
+                <Route path="dates" element={<DateVoting />} /> 
                 <Route path="ideas" element={<IdeaBoard />} />
-                <Route path="timeline" element={<Timeline />} /> {/* UPDATED ROUTE */}
+                <Route path="timeline" element={<Timeline />} /> 
                 <Route path="forecast" element={<PlaceholderTab />} />
                 <Route path="ledger" element={<PlaceholderTab />} />
               </Route>
