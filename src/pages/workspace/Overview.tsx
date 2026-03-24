@@ -57,12 +57,29 @@ export default function Overview() {
 
   const fetchMembers = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: memberData, error } = await supabase
         .from('trip_members')
-        .select(`id, role, profiles:user_id (id, name, avatar_url)`)
+        .select('id, role, user_id')
         .eq('trip_id', tripId);
       if (error) throw error;
-      setMembers(data || []);
+
+      // Fetch profiles for each member
+      const userIds = (memberData || []).map(m => m.user_id);
+      if (userIds.length === 0) {
+        setMembers([]);
+        return;
+      }
+
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name, avatar_url')
+        .in('id', userIds);
+
+      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+      setMembers((memberData || []).map(m => ({
+        ...m,
+        profiles: profileMap.get(m.user_id) || null,
+      })));
     } catch (error) {
       console.error('Error fetching members:', error);
     } finally {
