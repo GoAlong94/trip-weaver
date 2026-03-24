@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { LayoutDashboard, Lightbulb, Clock, TrendingUp, Receipt, ArrowLeft } from 'lucide-react';
+import { LayoutDashboard, Lightbulb, Clock, TrendingUp, Receipt, ArrowLeft, CalendarDays } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
   Sidebar,
@@ -13,6 +13,7 @@ import {
 
 const tabs = [
   { title: 'Overview', path: 'overview', icon: LayoutDashboard },
+  { title: 'Dates', path: 'dates', icon: CalendarDays },
   { title: 'Idea Board', path: 'ideas', icon: Lightbulb },
   { title: 'Timeline', path: 'timeline', icon: Clock },
   { title: 'Forecast', path: 'forecast', icon: TrendingUp },
