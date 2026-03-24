@@ -9,13 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ThumbsUp, Trash2, MapPin, Loader2 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ThumbsUp, Trash2, Loader2, Eye, EyeOff, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Expanded Categories
 const CATEGORIES = ['Locations', 'Transportation', 'Lodging', 'Food', 'Excursions', 'Entertainment', 'Other'];
-
-// Draft Versions
 const VERSIONS = [
   { id: 'idea', label: 'Brainstorming' },
   { id: 'draft_a', label: 'Draft A' },
@@ -27,6 +25,7 @@ export default function IdeaBoard() {
   const { tripId } = useParams();
   const { user } = useAuth();
   const [ideas, setIdeas] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [activeTab, setActiveTab] = useState('idea');
@@ -37,18 +36,30 @@ export default function IdeaBoard() {
   const [quantity, setQuantity] = useState(1);
   const [unitCost, setUnitCost] = useState(0);
   const [isMandatory, setIsMandatory] = useState(true);
+  const [visibility, setVisibility] = useState('public');
+  const [sharedWith, setSharedWith] = useState<string[]>([]);
 
   useEffect(() => {
     fetchIdeas();
+    fetchMembers();
   }, [tripId]);
+
+  const fetchMembers = async () => {
+    if (!tripId) return;
+    const { data } = await supabase
+      .from('trip_members')
+      .select('user_id, profiles(name)')
+      .eq('trip_id', tripId);
+    
+    // Filter out the current user from the checklist
+    if (data) {
+        setMembers(data.filter(m => m.user_id !== user?.id));
+    }
+  };
 
   const fetchIdeas = async () => {
     try {
-      const { data, error } = await supabase
-        .from('idea_cards')
-        .select('*')
-        .eq('trip_id', tripId);
-      
+      const { data, error } = await supabase.from('idea_cards').select('*').eq('trip_id', tripId);
       if (error) throw error;
       setIdeas(data || []);
     } catch (error: any) {
@@ -63,6 +74,9 @@ export default function IdeaBoard() {
     if (!user) return;
 
     try {
+      // If it's a subgroup, ensure the creator is also in the array so they don't lose access
+      const finalSharedWith = visibility === 'subgroup' ? [...sharedWith, user.id] : [];
+
       const newIdea = {
         trip_id: tripId,
         title,
@@ -71,8 +85,9 @@ export default function IdeaBoard() {
         unit_cost: unitCost,
         is_mandatory: isMandatory,
         created_by: user.id,
-        status: 'idea',
-        draft_version: activeTab, // Add it directly to the tab you are currently viewing
+        draft_version: activeTab,
+        visibility: visibility,
+        shared_with: finalSharedWith,
         upvotes: []
       };
       
@@ -81,62 +96,52 @@ export default function IdeaBoard() {
       
       toast.success('Idea added successfully!');
       setShowForm(false);
-      setTitle(''); setQuantity(1); setUnitCost(0); setIsMandatory(true);
+      
+      // Reset Form
+      setTitle(''); setQuantity(1); setUnitCost(0); setIsMandatory(true); 
+      setVisibility('public'); setSharedWith([]);
+      
       setIdeas([...ideas, data]);
     } catch (error: any) {
       toast.error(error.message);
     }
   };
 
+  const toggleSubGroupMember = (memberId: string) => {
+      setSharedWith(prev => 
+          prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]
+      );
+  };
+
   const toggleUpvote = async (idea: any) => {
     if (!user) return;
-    
-    // Calculate new upvotes array
     const hasUpvoted = idea.upvotes?.includes(user.id);
     const newUpvotes = hasUpvoted
-      ? idea.upvotes.filter((id: string) => id !== user.id) // Remove vote
-      : [...(idea.upvotes || []), user.id]; // Add vote
+      ? idea.upvotes.filter((id: string) => id !== user.id)
+      : [...(idea.upvotes || []), user.id];
 
-    // Optimistic UI update for instant feedback
     setIdeas(ideas.map(i => i.id === idea.id ? { ...i, upvotes: newUpvotes } : i));
-
-    // Database update
-    const { error } = await supabase
-      .from('idea_cards')
-      .update({ upvotes: newUpvotes })
-      .eq('id', idea.id);
-
-    if (error) {
-      toast.error("Failed to register vote.");
-      fetchIdeas(); // Revert on failure
-    }
+    await supabase.from('idea_cards').update({ upvotes: newUpvotes }).eq('id', idea.id);
   };
 
   const moveDraft = async (idea: any, newVersion: string) => {
     setIdeas(ideas.map(i => i.id === idea.id ? { ...i, draft_version: newVersion } : i));
-    const { error } = await supabase.from('idea_cards').update({ draft_version: newVersion }).eq('id', idea.id);
-    if (error) toast.error("Failed to move card.");
+    await supabase.from('idea_cards').update({ draft_version: newVersion }).eq('id', idea.id);
   };
 
   const deleteIdea = async (id: string) => {
     setIdeas(ideas.filter(i => i.id !== id));
-    const { error } = await supabase.from('idea_cards').delete().eq('id', id);
-    if (error) toast.error("Failed to delete card.");
+    await supabase.from('idea_cards').delete().eq('id', id);
   };
 
-  if (loading) {
-    return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  }
+  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
-  // Filter cards by the active draft tab, and sort by upvotes (Highest to Lowest)
   const visibleIdeas = ideas
     .filter(i => (i.draft_version || 'idea') === activeTab)
     .sort((a, b) => (b.upvotes?.length || 0) - (a.upvotes?.length || 0));
 
   return (
     <div className="p-6 h-[calc(100vh-73px)] flex flex-col">
-      
-      {/* HEADER & TABS */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
           <h2 className="text-2xl font-bold">The Planning Board</h2>
@@ -164,36 +169,58 @@ export default function IdeaBoard() {
       {showForm && (
         <Card className="mb-8 border-primary/20 bg-muted/30 shadow-inner shrink-0">
           <CardContent className="pt-6">
-            <form onSubmit={handleAddIdea} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+            <form onSubmit={handleAddIdea} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
               <div className="space-y-2 lg:col-span-2">
                 <Label>Idea Title</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="e.g. Bus to Kasol" />
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="e.g. Secret Beer Run" />
               </div>
               <div className="space-y-2">
                 <Label>Category</Label>
                 <Select value={category} onValueChange={setCategory}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Visibility</Label>
+                <Select value={visibility} onValueChange={setVisibility}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    <SelectItem value="public"><div className="flex items-center gap-2"><Eye className="h-3 w-3"/> Public</div></SelectItem>
+                    <SelectItem value="subgroup"><div className="flex items-center gap-2"><Users className="h-3 w-3"/> Sub-Group</div></SelectItem>
+                    <SelectItem value="private"><div className="flex items-center gap-2"><EyeOff className="h-3 w-3"/> Private</div></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
-                <Label>Quantity</Label>
-                <Input type="number" min="1" value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Est. Unit Cost (₹)</Label>
+                <Label>Est. Cost (₹)</Label>
                 <Input type="number" min="0" value={unitCost} onChange={(e) => setUnitCost(Number(e.target.value))} required />
               </div>
-              <div className="flex items-center space-x-2 lg:col-span-4 bg-background p-3 rounded-md border">
-                <Switch checked={isMandatory} onCheckedChange={setIsMandatory} />
-                <div>
-                  <Label className="text-base">{isMandatory ? 'Mandatory Expense' : 'Optional Expense'}</Label>
-                  <p className="text-xs text-muted-foreground">Mandatory items count towards the Base Budget.</p>
-                </div>
-              </div>
-              <Button type="submit" className="w-full h-full">Save Idea</Button>
+
+              <Button type="submit" className="w-full h-10 lg:mt-6">Save Idea</Button>
+              
+              {/* SUB-GROUP MEMBER SELECTION */}
+              {visibility === 'subgroup' && members.length > 0 && (
+                  <div className="lg:col-span-6 bg-background p-4 rounded-md border mt-2">
+                      <Label className="mb-3 block">Who is invited?</Label>
+                      <div className="flex flex-wrap gap-4">
+                          {members.map(m => (
+                              <div key={m.user_id} className="flex items-center space-x-2">
+                                  <Checkbox 
+                                      id={`member-${m.user_id}`} 
+                                      checked={sharedWith.includes(m.user_id)}
+                                      onCheckedChange={() => toggleSubGroupMember(m.user_id)}
+                                  />
+                                  <label htmlFor={`member-${m.user_id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                      {m.profiles?.name || 'Unknown'}
+                                  </label>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
             </form>
           </CardContent>
         </Card>
@@ -203,7 +230,7 @@ export default function IdeaBoard() {
       <div className="flex gap-4 overflow-x-auto pb-4 flex-1 items-start">
         {CATEGORIES.map(cat => {
           const categoryIdeas = visibleIdeas.filter(idea => idea.category === cat);
-          if (categoryIdeas.length === 0 && !showForm) return null; // Hide empty columns unless adding
+          if (categoryIdeas.length === 0 && !showForm) return null;
 
           return (
             <div key={cat} className="min-w-[300px] w-[300px] bg-muted/40 rounded-xl p-4 border flex flex-col max-h-full">
@@ -218,19 +245,21 @@ export default function IdeaBoard() {
                   return (
                     <Card key={idea.id} className="shadow-sm border-border/50 hover:border-primary/30 transition-colors">
                       <CardHeader className="p-4 pb-2 flex flex-row items-start justify-between gap-2 space-y-0">
-                        <CardTitle className="text-base font-medium leading-tight">{idea.title}</CardTitle>
+                        <div>
+                            <CardTitle className="text-base font-medium leading-tight">{idea.title}</CardTitle>
+                            {idea.visibility !== 'public' && (
+                                <span className={`text-[10px] mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm ${idea.visibility === 'private' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-600'}`}>
+                                    {idea.visibility === 'private' ? <EyeOff className="h-3 w-3"/> : <Users className="h-3 w-3"/>}
+                                    {idea.visibility}
+                                </span>
+                            )}
+                        </div>
                         <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive -mt-1 -mr-2 shrink-0" onClick={() => deleteIdea(idea.id)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </CardHeader>
                       <CardContent className="p-4 pt-0 text-sm flex flex-col gap-3">
-                        
-                        <div className="flex justify-between items-center bg-muted/50 p-2 rounded-md">
-                          <span className="text-muted-foreground">{idea.quantity} × ₹{idea.unit_cost}</span>
-                          <span className="font-bold text-foreground">₹{idea.quantity * idea.unit_cost}</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center pt-2 border-t">
+                        <div className="flex justify-between items-center pt-2 border-t mt-2">
                           <Button 
                             variant="ghost" 
                             size="sm" 
@@ -250,7 +279,6 @@ export default function IdeaBoard() {
                             </SelectContent>
                           </Select>
                         </div>
-
                       </CardContent>
                     </Card>
                   );
