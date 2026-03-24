@@ -4,7 +4,7 @@ import { useTrips } from '@/context/TripContext';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format, parseISO, differenceInDays } from 'date-fns';
-import { Calendar, MapPin, Users, Clock, Settings, Trash2, Link2, Copy, Check, RefreshCw } from 'lucide-react';
+import { Calendar, MapPin, Users, Clock, Settings, Trash2, Link2, Copy, Check, RefreshCw, UserPlus, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,7 +17,9 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
-function generateCode(length = 8) {
+const APP_DOMAIN = 'https://plansplit.lovable.app';
+
+function generateCode(length = 10) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
   let result = '';
   for (let i = 0; i < length; i++) {
@@ -43,16 +45,15 @@ export default function Overview() {
   const [editStart, setEditStart] = useState(trip?.start_date || '');
   const [editEnd, setEditEnd] = useState(trip?.end_date || '');
 
-  // Invite link state
+  // Invite state
+  const [inviteEmail, setInviteEmail] = useState('');
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
   useEffect(() => {
-    if (tripId) {
-      fetchMembers();
-      fetchExistingInvite();
-    }
+    if (tripId) fetchMembers();
   }, [tripId]);
 
   const fetchMembers = async () => {
@@ -63,12 +64,8 @@ export default function Overview() {
         .eq('trip_id', tripId);
       if (error) throw error;
 
-      // Fetch profiles for each member
       const userIds = (memberData || []).map(m => m.user_id);
-      if (userIds.length === 0) {
-        setMembers([]);
-        return;
-      }
+      if (userIds.length === 0) { setMembers([]); return; }
 
       const { data: profiles } = await supabase
         .from('profiles')
@@ -87,26 +84,16 @@ export default function Overview() {
     }
   };
 
-  const fetchExistingInvite = async () => {
-    try {
-      const { data } = await supabase
-        .from('trip_invites')
-        .select('code')
-        .eq('trip_id', tripId!)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+  const handleInviteByEmail = async () => {
+    if (!trip || !user || !inviteEmail.trim()) return;
+    const email = inviteEmail.trim().toLowerCase();
 
-      if (data) {
-        setInviteLink(`${window.location.origin}/join/${tripId}?code=${data.code}`);
-      }
-    } catch (error) {
-      console.error('Error fetching invite:', error);
+    // Basic email validation
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('Please enter a valid email address');
+      return;
     }
-  };
 
-  const handleGenerateLink = async () => {
-    if (!trip || !user) return;
     setGeneratingLink(true);
     try {
       const code = generateCode(10);
@@ -114,14 +101,15 @@ export default function Overview() {
         trip_id: trip.id,
         code,
         created_by: user.id,
+        max_uses: 1,
       });
       if (error) throw error;
 
-      const link = `${window.location.origin}/join/${trip.id}?code=${code}`;
+      const link = `${APP_DOMAIN}/join/${trip.id}?code=${code}`;
       setInviteLink(link);
-      toast.success('Invite link created!');
+      toast.success(`Invite link generated for ${email}`);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to generate link');
+      toast.error(error.message || 'Failed to generate invite');
     } finally {
       setGeneratingLink(false);
     }
@@ -138,6 +126,12 @@ export default function Overview() {
       toast.error('Failed to copy');
     }
   }, [inviteLink]);
+
+  const resetInviteForm = () => {
+    setInviteEmail('');
+    setInviteLink(null);
+    setCopied(false);
+  };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -239,10 +233,77 @@ export default function Overview() {
             </h3>
             <p className="text-sm text-muted-foreground mt-1">Manage who has access to this trip's planner and ledger.</p>
           </div>
+          {isHost && (
+            <Dialog open={inviteDialogOpen} onOpenChange={(open) => {
+              setInviteDialogOpen(open);
+              if (!open) resetInviteForm();
+            }}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="gap-2">
+                  <UserPlus className="h-4 w-4" /> Add Member
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Invite a Member</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
+                  <p className="text-sm text-muted-foreground">
+                    Enter your friend's email address. We'll generate a unique invite link you can share with them.
+                  </p>
+
+                  {!inviteLink ? (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="invite-email">Email Address</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="invite-email"
+                            type="email"
+                            placeholder="friend@example.com"
+                            value={inviteEmail}
+                            onChange={e => setInviteEmail(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleInviteByEmail()}
+                          />
+                          <Button
+                            onClick={handleInviteByEmail}
+                            disabled={generatingLink || !inviteEmail.trim()}
+                            className="gap-2 shrink-0"
+                          >
+                            <Mail className="h-4 w-4" />
+                            {generatingLink ? 'Generating...' : 'Generate Link'}
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg bg-muted/50 border">
+                        <p className="text-xs text-muted-foreground mb-1">Share this link with <span className="font-medium text-foreground">{inviteEmail}</span>:</p>
+                        <div className="flex gap-2 mt-2">
+                          <Input
+                            readOnly
+                            value={inviteLink}
+                            className="font-mono text-xs bg-background"
+                          />
+                          <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5 shrink-0">
+                            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                            {copied ? 'Copied' : 'Copy'}
+                          </Button>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={resetInviteForm} className="gap-2">
+                        <UserPlus className="h-3.5 w-3.5" /> Invite Another
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
 
-        <div className="p-6 space-y-6">
-          {/* Members List */}
+        <div className="p-6">
           <ul className="space-y-3">
             {loadingMembers ? (
               <p className="text-sm text-muted-foreground">Loading members...</p>
@@ -260,41 +321,6 @@ export default function Overview() {
               </li>
             ))}
           </ul>
-
-          {/* INVITE LINK SECTION */}
-          {isHost && (
-            <div className="p-4 bg-muted/30 rounded-lg border border-dashed space-y-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Link2 className="h-4 w-4 text-primary" />
-                Invite via Link
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Share this link with anyone you'd like to add to this trip. They'll need to sign in first.
-              </p>
-
-              {inviteLink ? (
-                <div className="flex gap-2">
-                  <Input
-                    readOnly
-                    value={inviteLink}
-                    className="font-mono text-xs bg-background"
-                  />
-                  <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5 shrink-0">
-                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copied ? 'Copied' : 'Copy'}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={handleGenerateLink} title="Generate new link" className="shrink-0">
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ) : (
-                <Button onClick={handleGenerateLink} disabled={generatingLink} className="gap-2" size="sm">
-                  <Link2 className="h-4 w-4" />
-                  {generatingLink ? 'Generating...' : 'Generate Invite Link'}
-                </Button>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>
