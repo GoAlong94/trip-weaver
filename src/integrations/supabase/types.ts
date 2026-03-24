@@ -96,40 +96,49 @@ export type Database = {
           category: string
           created_at: string
           created_by: string
+          end_time: string | null
           id: string
           is_mandatory: boolean
           quantity: number
+          start_time: string | null
           status: string
           title: string
           trip_id: string
           unit_cost: number
           updated_at: string
+          visibility: string | null
         }
         Insert: {
           category?: string
           created_at?: string
           created_by: string
+          end_time?: string | null
           id?: string
           is_mandatory?: boolean
           quantity?: number
+          start_time?: string | null
           status?: string
           title: string
           trip_id: string
           unit_cost?: number
           updated_at?: string
+          visibility?: string | null
         }
         Update: {
           category?: string
           created_at?: string
           created_by?: string
+          end_time?: string | null
           id?: string
           is_mandatory?: boolean
           quantity?: number
+          start_time?: string | null
           status?: string
           title?: string
           trip_id?: string
           unit_cost?: number
           updated_at?: string
+          visibility?: string | null
         }
         Relationships: [
           {
