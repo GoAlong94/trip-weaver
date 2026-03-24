@@ -96,40 +96,49 @@ export type Database = {
           category: string
           created_at: string
           created_by: string
+          end_time: string | null
           id: string
           is_mandatory: boolean
           quantity: number
+          start_time: string | null
           status: string
           title: string
           trip_id: string
           unit_cost: number
           updated_at: string
+          visibility: string | null
         }
         Insert: {
           category?: string
           created_at?: string
           created_by: string
+          end_time?: string | null
           id?: string
           is_mandatory?: boolean
           quantity?: number
+          start_time?: string | null
           status?: string
           title: string
           trip_id: string
           unit_cost?: number
           updated_at?: string
+          visibility?: string | null
         }
         Update: {
           category?: string
           created_at?: string
           created_by?: string
+          end_time?: string | null
           id?: string
           is_mandatory?: boolean
           quantity?: number
+          start_time?: string | null
           status?: string
           title?: string
           trip_id?: string
           unit_cost?: number
           updated_at?: string
+          visibility?: string | null
         }
         Relationships: [
           {
@@ -164,6 +173,47 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      trip_invites: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          id: string
+          max_uses: number | null
+          trip_id: string
+          use_count: number
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          id?: string
+          max_uses?: number | null
+          trip_id: string
+          use_count?: number
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          id?: string
+          max_uses?: number | null
+          trip_id?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_invites_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       trip_members: {
         Row: {

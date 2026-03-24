@@ -14,6 +14,7 @@ import Overview from "./pages/workspace/Overview";
 import IdeaBoard from "./pages/workspace/IdeaBoard";
 import Timeline from "./pages/workspace/Timeline"; // NEW IMPORT
 import PlaceholderTab from "./pages/workspace/PlaceholderTab";
+import JoinTrip from "./pages/JoinTrip";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +43,7 @@ const App = () => (
                 <Route path="forecast" element={<PlaceholderTab />} />
                 <Route path="ledger" element={<PlaceholderTab />} />
               </Route>
+              <Route path="/join/:tripId" element={<JoinTrip />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
