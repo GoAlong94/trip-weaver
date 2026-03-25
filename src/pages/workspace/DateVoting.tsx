@@ -31,10 +31,10 @@ export default function DateVoting() {
       setMembers(memberData || []);
 
       // 2. Fetch all votes for this trip
-      const { data: voteData, error } = await supabase
-        .from('trip_date_votes')
+      const { data: voteData, error } = await (supabase
+        .from('trip_date_votes' as any)
         .select('*')
-        .eq('trip_id', tripId);
+        .eq('trip_id', tripId)) as any;
       
       if (error) throw error;
       setVotes(voteData || []);
