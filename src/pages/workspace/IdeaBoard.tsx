@@ -11,9 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import IdeaCardModal from '@/components/IdeaCardModal';
-import { ThumbsUp, Trash2, Loader2, Eye, EyeOff, Users } from 'lucide-react';
+import { ThumbsUp, Trash2, Loader2, Eye, EyeOff, Users, MapPin, LinkIcon, Youtube, Instagram, Globe, Save, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
-import { MapPin, Users, Link as LinkIcon, Trash2, Youtube, Instagram, Globe, Save, Loader2, DollarSign } from 'lucide-react';
 
 const CATEGORIES = ['Locations', 'Transportation', 'Lodging', 'Food', 'Excursions', 'Entertainment', 'Other'];
 const VERSIONS = [
@@ -125,12 +124,12 @@ export default function IdeaBoard() {
       : [...(idea.upvotes || []), user.id];
 
     setIdeas(ideas.map(i => i.id === idea.id ? { ...i, upvotes: newUpvotes } : i));
-    await supabase.from('idea_cards').update({ upvotes: newUpvotes }).eq('id', idea.id);
+    await supabase.from('idea_cards').update({ upvotes: newUpvotes } as any).eq('id', idea.id);
   };
 
   const moveDraft = async (idea: any, newVersion: string) => {
     setIdeas(ideas.map(i => i.id === idea.id ? { ...i, draft_version: newVersion } : i));
-    await supabase.from('idea_cards').update({ draft_version: newVersion }).eq('id', idea.id);
+    await supabase.from('idea_cards').update({ draft_version: newVersion } as any).eq('id', idea.id);
   };
 
   const deleteIdea = async (id: string) => {

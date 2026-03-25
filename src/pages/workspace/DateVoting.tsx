@@ -31,10 +31,10 @@ export default function DateVoting() {
       setMembers(memberData || []);
 
       // 2. Fetch all votes for this trip
-      const { data: voteData, error } = await supabase
-        .from('trip_date_votes')
+      const { data: voteData, error } = await (supabase
+        .from('trip_date_votes' as any)
         .select('*')
-        .eq('trip_id', tripId);
+        .eq('trip_id', tripId)) as any;
       
       if (error) throw error;
       setVotes(voteData || []);
@@ -60,13 +60,13 @@ export default function DateVoting() {
     // Optimistically update UI
     if (newStatus === 'clear') {
       setVotes(votes.filter(v => !(v.vote_date === dateStr && v.user_id === user.id)));
-      await supabase.from('trip_date_votes').delete().match({ trip_id: tripId, user_id: user.id, vote_date: dateStr });
+      await (supabase.from('trip_date_votes' as any) as any).delete().match({ trip_id: tripId, user_id: user.id, vote_date: dateStr });
     } else {
       const newVoteObj = { trip_id: tripId, user_id: user.id, vote_date: dateStr, status: newStatus };
       const otherVotes = votes.filter(v => !(v.vote_date === dateStr && v.user_id === user.id));
       setVotes([...otherVotes, newVoteObj]);
       
-      await supabase.from('trip_date_votes').upsert(newVoteObj);
+      await (supabase.from('trip_date_votes' as any) as any).upsert(newVoteObj);
     }
   };
 

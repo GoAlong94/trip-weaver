@@ -102,7 +102,7 @@ export default function Timeline() {
 
   const removeFromTimeline = async (id: string) => {
     setIdeas(ideas.map(i => i.id === id ? { ...i, start_datetime: null, end_datetime: null } : i));
-    await supabase.from('idea_cards').update({ start_datetime: null, end_datetime: null }).eq('id', id);
+    await supabase.from('idea_cards').update({ start_datetime: null, end_datetime: null } as any).eq('id', id);
   };
 
   // --- CUSTOM MOUSE EVENTS: RESIZING & SLIDING ON TIMELINE ---
@@ -170,7 +170,7 @@ export default function Timeline() {
 
   const updateIdeaDates = async (id: string, start: Date, end: Date) => {
     setIdeas(prev => prev.map(i => i.id === id ? { ...i, start_datetime: start.toISOString(), end_datetime: end.toISOString() } : i));
-    await supabase.from('idea_cards').update({ start_datetime: start.toISOString(), end_datetime: end.toISOString() }).eq('id', id);
+    await supabase.from('idea_cards').update({ start_datetime: start.toISOString(), end_datetime: end.toISOString() } as any).eq('id', id);
   };
 
   if (loading || !tripStart) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
