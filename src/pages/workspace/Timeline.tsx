@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -6,8 +6,8 @@ import { useTrips } from '@/context/TripContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Clock, GripVertical, Calendar as CalendarIcon, Loader2, X } from 'lucide-react';
-import { format, parseISO, eachDayOfInterval, addDays } from 'date-fns';
+import { GripVertical, X, Loader2, GripHorizontal } from 'lucide-react';
+import { format, parseISO, eachDayOfInterval, addDays, differenceInMinutes, startOfDay, endOfDay, addMinutes } from 'date-fns';
 import { toast } from 'sonner';
 
 const VERSIONS = [
@@ -17,7 +17,10 @@ const VERSIONS = [
   { id: 'active', label: 'Active Itinerary' }
 ];
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const CATEGORIES = ['Locations', 'Transportation', 'Lodging', 'Food', 'Excursions', 'Entertainment', 'Other'];
+
+const PIXELS_PER_HOUR = 120; // Width of 1 hour in the timeline
+const PIXELS_PER_MINUTE = PIXELS_PER_HOUR / 60;
 
 export default function Timeline() {
   const { tripId } = useParams();
@@ -28,23 +31,30 @@ export default function Timeline() {
   const [ideas, setIdeas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('idea');
-  const [activeDate, setActiveDate] = useState<string>('');
+  
+  // Trip bounds
+  const [tripStart, setTripStart] = useState<Date | null>(null);
+  const [tripEnd, setTripEnd] = useState<Date | null>(null);
   const [tripDays, setTripDays] = useState<Date[]>([]);
-  const [draggedIdea, setDraggedIdea] = useState<string | null>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
+
+  // Smooth Interaction State (Dragging / Resizing on Timeline)
+  const [interaction, setInteraction] = useState<{
+    type: 'move' | 'resize-left' | 'resize-right';
+    id: string;
+    startX: number;
+    originalStart: Date;
+    originalEnd: Date;
+  } | null>(null);
 
   useEffect(() => {
     if (trip) {
-      // Calculate the days of the trip
       try {
-        const start = parseISO(trip.start_date || new Date().toISOString());
-        // Default to a 3 day trip if end_date is missing or invalid
-        const end = trip.end_date ? parseISO(trip.end_date) : addDays(start, 2);
-        
-        const days = eachDayOfInterval({ start, end });
-        setTripDays(days);
-        if (days.length > 0) {
-          setActiveDate(format(days[0], 'yyyy-MM-dd'));
-        }
+        const start = startOfDay(parseISO(trip.start_date || new Date().toISOString()));
+        const end = endOfDay(trip.end_date ? parseISO(trip.end_date) : addDays(start, 2));
+        setTripStart(start);
+        setTripEnd(end);
+        setTripDays(eachDayOfInterval({ start, end }));
       } catch (e) {
         console.error("Date parsing error", e);
       }
@@ -54,228 +64,278 @@ export default function Timeline() {
 
   const fetchTimeline = async () => {
     try {
-      const { data, error } = await supabase
-        .from('idea_cards')
-        .select('*')
-        .eq('trip_id', tripId);
-
+      const { data, error } = await supabase.from('idea_cards').select('*').eq('trip_id', tripId);
       if (error) throw error;
       setIdeas(data || []);
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Failed to load timeline");
     } finally {
       setLoading(false);
     }
   };
 
-  // --- DRAG AND DROP HANDLERS ---
-  
-  const handleDragStart = (e: React.DragEvent, id: string) => {
+  // --- HTML5 DnD: FROM POOL TO TIMELINE ---
+  const handleDragStartPool = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData("ideaId", id);
-    setDraggedIdea(id);
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault(); // Necessary to allow dropping
-  };
-
-  const handleDropOnTimeline = async (e: React.DragEvent, hour: number) => {
+  const handleDropOnTimeline = async (e: React.DragEvent) => {
     e.preventDefault();
     const id = e.dataTransfer.getData("ideaId");
-    if (!id || !activeDate) return;
+    if (!id || !tripStart || !timelineRef.current) return;
 
-    const startTime = `${hour.toString().padStart(2, '0')}:00:00`;
-    const endTime = `${(hour + 1).toString().padStart(2, '0')}:00:00`;
+    const rect = timelineRef.current.getBoundingClientRect();
+    const scrollLeft = timelineRef.current.scrollLeft;
+    const xPos = e.clientX - rect.left + scrollLeft;
+    
+    // Calculate the drop time based on pixels
+    const dropMinutes = Math.floor(xPos / PIXELS_PER_MINUTE);
+    const newStart = addMinutes(tripStart, dropMinutes);
+    
+    // Default duration: Locations get 24 hours, others get 2 hours
+    const idea = ideas.find(i => i.id === id);
+    const durationMins = idea?.category === 'Locations' ? (24 * 60) : 120;
+    const newEnd = addMinutes(newStart, durationMins);
 
-    // Optimistic Update
-    setIdeas(ideas.map(i => i.id === id ? { ...i, scheduled_date: activeDate, start_time: startTime, end_time: endTime } : i));
-    setDraggedIdea(null);
-
-    // Database Update
-    const { error } = await supabase
-      .from('idea_cards')
-      .update({ scheduled_date: activeDate, start_time: startTime, end_time: endTime })
-      .eq('id', id);
-
-    if (error) {
-      toast.error("Failed to schedule idea.");
-      fetchTimeline(); // Revert on fail
-    }
+    updateIdeaDates(id, newStart, newEnd);
   };
 
-  const handleDropOnUnscheduled = async (e: React.DragEvent) => {
-    e.preventDefault();
-    const id = e.dataTransfer.getData("ideaId");
-    if (!id) return;
-
-    // Optimistic Update
-    setIdeas(ideas.map(i => i.id === id ? { ...i, scheduled_date: null, start_time: null, end_time: null } : i));
-    setDraggedIdea(null);
-
-    // Database Update
-    const { error } = await supabase
-      .from('idea_cards')
-      .update({ scheduled_date: null, start_time: null, end_time: null })
-      .eq('id', id);
-
-    if (error) {
-      toast.error("Failed to unschedule idea.");
-      fetchTimeline();
-    }
+  const removeFromTimeline = async (id: string) => {
+    setIdeas(ideas.map(i => i.id === id ? { ...i, start_datetime: null, end_datetime: null } : i));
+    await supabase.from('idea_cards').update({ start_datetime: null, end_datetime: null }).eq('id', id);
   };
 
-  if (loading || !trip) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  // --- CUSTOM MOUSE EVENTS: RESIZING & SLIDING ON TIMELINE ---
+  const handlePointerDown = (e: React.MouseEvent, type: 'move' | 'resize-left' | 'resize-right', idea: any) => {
+    e.stopPropagation();
+    setInteraction({
+      type,
+      id: idea.id,
+      startX: e.pageX,
+      originalStart: new Date(idea.start_datetime),
+      originalEnd: new Date(idea.end_datetime)
+    });
+  };
 
-  // --- FILTERING ---
+  const handlePointerMove = useCallback((e: MouseEvent) => {
+    if (!interaction) return;
+    
+    const deltaX = e.pageX - interaction.startX;
+    const deltaMins = Math.round(deltaX / PIXELS_PER_MINUTE / 15) * 15; // Snap to 15-minute increments
+
+    setIdeas(prev => prev.map(idea => {
+      if (idea.id !== interaction.id) return idea;
+      
+      let newStart = interaction.originalStart;
+      let newEnd = interaction.originalEnd;
+
+      if (interaction.type === 'move') {
+        newStart = addMinutes(interaction.originalStart, deltaMins);
+        newEnd = addMinutes(interaction.originalEnd, deltaMins);
+      } else if (interaction.type === 'resize-left') {
+        newStart = addMinutes(interaction.originalStart, deltaMins);
+        if (newStart >= newEnd) newStart = addMinutes(newEnd, -15); // Prevent inversion
+      } else if (interaction.type === 'resize-right') {
+        newEnd = addMinutes(interaction.originalEnd, deltaMins);
+        if (newEnd <= newStart) newEnd = addMinutes(newStart, 15);
+      }
+
+      return { ...idea, start_datetime: newStart.toISOString(), end_datetime: newEnd.toISOString() };
+    }));
+  }, [interaction]);
+
+  const handlePointerUp = useCallback(async () => {
+    if (!interaction) return;
+    
+    const idea = ideas.find(i => i.id === interaction.id);
+    if (idea) {
+      await updateIdeaDates(idea.id, new Date(idea.start_datetime), new Date(idea.end_datetime));
+    }
+    setInteraction(null);
+  }, [interaction, ideas]);
+
+  useEffect(() => {
+    if (interaction) {
+      window.addEventListener('mousemove', handlePointerMove);
+      window.addEventListener('mouseup', handlePointerUp);
+    } else {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+    };
+  }, [interaction, handlePointerMove, handlePointerUp]);
+
+  const updateIdeaDates = async (id: string, start: Date, end: Date) => {
+    setIdeas(prev => prev.map(i => i.id === id ? { ...i, start_datetime: start.toISOString(), end_datetime: end.toISOString() } : i));
+    await supabase.from('idea_cards').update({ start_datetime: start.toISOString(), end_datetime: end.toISOString() }).eq('id', id);
+  };
+
+  if (loading || !tripStart) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+
+  // --- FILTERING & RENDER MATH ---
   const currentDraftIdeas = ideas.filter(i => (i.draft_version || 'idea') === activeTab);
-  const unscheduledIdeas = currentDraftIdeas.filter(i => !i.scheduled_date || !i.start_time);
-  const scheduledIdeas = currentDraftIdeas.filter(i => i.scheduled_date === activeDate && i.start_time);
+  const unscheduledIdeas = currentDraftIdeas.filter(i => !i.start_datetime);
+  const scheduledIdeas = currentDraftIdeas.filter(i => i.start_datetime && i.end_datetime);
+
+  const getLeftPos = (dateStr: string) => differenceInMinutes(parseISO(dateStr), tripStart) * PIXELS_PER_MINUTE;
+  const getWidth = (startStr: string, endStr: string) => differenceInMinutes(parseISO(endStr), parseISO(startStr)) * PIXELS_PER_MINUTE;
+
+  // Packing algorithm to prevent overlapping cards within the same lane
+  const packLane = (items: any[]) => {
+    const sorted = [...items].sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
+    const rows: number[] = [];
+    return sorted.map(item => {
+      const start = new Date(item.start_datetime).getTime();
+      const end = new Date(item.end_datetime).getTime();
+      let rowIndex = 0;
+      while (rows[rowIndex] && rows[rowIndex] > start) rowIndex++;
+      rows[rowIndex] = end;
+      return { ...item, rowIndex };
+    });
+  };
 
   return (
-    <div className="p-6 h-[calc(100vh-73px)] flex flex-col">
+    <div className="p-6 h-[calc(100vh-73px)] flex flex-col overflow-hidden">
       
-      {/* HEADER & DRAFT TABS */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold tracking-tight">Timeline Visualizer</h2>
-        <p className="text-muted-foreground mt-1 text-sm">Drag cards from the pool onto the daily schedule.</p>
+      <div className="mb-4 shrink-0">
+        <h2 className="text-2xl font-bold tracking-tight">Continuous Planner</h2>
+        <p className="text-muted-foreground mt-1 text-sm">Drag unscheduled ideas onto the timeline. Stretch the edges to adjust duration.</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-4 shrink-0">
         <TabsList className="grid w-full max-w-2xl grid-cols-2 md:grid-cols-4">
-          {VERSIONS.map(v => (
-             <TabsTrigger key={v.id} value={v.id}>{v.label}</TabsTrigger>
-          ))}
+          {VERSIONS.map(v => <TabsTrigger key={v.id} value={v.id}>{v.label}</TabsTrigger>)}
         </TabsList>
       </Tabs>
 
-      {/* DAY SELECTOR */}
-      <div className="flex gap-2 overflow-x-auto pb-4 mb-2 border-b">
-        {tripDays.map((day, idx) => {
-          const dateStr = format(day, 'yyyy-MM-dd');
-          const isActive = activeDate === dateStr;
-          return (
-            <button
-              key={dateStr}
-              onClick={() => setActiveDate(dateStr)}
-              className={`flex flex-col items-center min-w-[80px] p-2 rounded-lg transition-colors ${
-                isActive ? 'bg-primary text-primary-foreground shadow-md' : 'bg-muted/50 hover:bg-muted'
-              }`}
-            >
-              <span className="text-xs font-semibold uppercase opacity-80">Day {idx + 1}</span>
-              <span className="font-bold">{format(day, 'MMM d')}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* MAIN WORKSPACE: Split View */}
-      <div className="flex gap-6 flex-1 overflow-hidden mt-4">
+      {/* SPLIT VIEW */}
+      <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
         
         {/* LEFT: Unscheduled Bucket */}
+        <div className="w-64 flex flex-col bg-muted/30 rounded-xl border shrink-0 overflow-hidden">
+          <div className="p-3 border-b bg-muted/50 font-semibold text-sm uppercase flex items-center gap-2">
+            <GripVertical className="h-4 w-4" /> Unscheduled ({unscheduledIdeas.length})
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+            {unscheduledIdeas.map(idea => (
+              <Card 
+                key={idea.id} draggable onDragStart={(e) => handleDragStartPool(e, idea.id)}
+                className="cursor-grab active:cursor-grabbing hover:border-primary/50 shadow-sm"
+              >
+                <CardContent className="p-3">
+                  <h4 className="font-medium text-sm leading-tight">{idea.title}</h4>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{idea.category}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {/* RIGHT: Seamless Horizontal Gantt Chart */}
         <div 
-          className="w-1/3 flex flex-col bg-muted/30 rounded-xl border p-4"
-          onDragOver={handleDragOver}
-          onDrop={handleDropOnUnscheduled}
+          ref={timelineRef}
+          className="flex-1 overflow-x-auto overflow-y-auto custom-scrollbar bg-background rounded-xl border relative select-none"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDropOnTimeline}
         >
-          <div className="flex items-center gap-2 mb-4 text-muted-foreground border-b pb-2">
-            <GripVertical className="h-4 w-4" />
-            <h3 className="font-semibold text-sm uppercase">Unscheduled Pool</h3>
-          </div>
-          
-          <div className="overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-            {unscheduledIdeas.length === 0 ? (
-              <div className="text-center p-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg">
-                No unscheduled ideas for this draft. Go to the Idea Board to add more!
-              </div>
-            ) : (
-              unscheduledIdeas.map(idea => (
-                <Card 
-                  key={idea.id} 
-                  draggable 
-                  onDragStart={(e) => handleDragStart(e, idea.id)}
-                  className="cursor-grab active:cursor-grabbing hover:border-primary/50 transition-colors bg-card shadow-sm"
-                >
-                  <CardContent className="p-3 flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium text-sm leading-tight">{idea.title}</h4>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{idea.category}</Badge>
-                        <span className="text-xs text-muted-foreground font-mono">₹{idea.quantity * idea.unit_cost}</span>
-                      </div>
+          <div style={{ width: tripDays.length * 24 * PIXELS_PER_HOUR, minHeight: '100%' }} className="relative flex flex-col">
+            
+            {/* TIMELINE RULER (DAYS & HOURS) */}
+            <div className="sticky top-0 z-20 flex bg-card/90 backdrop-blur border-b">
+              {tripDays.map((day, dIdx) => (
+                <div key={dIdx} className="flex border-r border-border/50">
+                  {Array.from({ length: 24 }).map((_, hIdx) => (
+                    <div key={hIdx} style={{ width: PIXELS_PER_HOUR }} className="shrink-0 border-r border-border/30 p-1 text-[10px] text-muted-foreground">
+                      <span className="font-semibold text-foreground/80">{format(day, 'MMM d')}</span> • {hIdx === 0 ? '12am' : hIdx < 12 ? `${hIdx}am` : hIdx === 12 ? '12pm' : `${hIdx-12}pm`}
                     </div>
-                    <GripVertical className="h-4 w-4 text-muted-foreground opacity-50" />
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* RIGHT: Daily Timeline Grid */}
-        <div className="w-2/3 overflow-y-auto pr-4 custom-scrollbar bg-background rounded-xl">
-          <div className="relative">
-            {HOURS.map(hour => {
-              // Find items scheduled for this specific hour
-              const itemsInHour = scheduledIdeas.filter(i => i.start_time?.startsWith(hour.toString().padStart(2, '0')));
-              
-              return (
-                <div 
-                  key={hour} 
-                  className="flex min-h-[80px] border-b border-dashed border-border/60 group"
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDropOnTimeline(e, hour)}
-                >
-                  {/* Time Label */}
-                  <div className="w-16 py-2 text-xs font-medium text-muted-foreground text-right pr-4 shrink-0 border-r border-border/40">
-                    {hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`}
-                  </div>
-                  
-                  {/* Drop Zone & Cards */}
-                  <div className="flex-1 p-2 relative group-hover:bg-muted/10 transition-colors flex flex-col gap-2">
-                    {itemsInHour.map(idea => (
-                      <Card 
-                        key={idea.id} 
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, idea.id)}
-                        className="bg-primary/5 border-primary/20 shadow-sm cursor-grab active:cursor-grabbing"
-                      >
-                        <CardContent className="p-3 flex justify-between items-start">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <Badge variant="outline" className="bg-background text-[10px]">{idea.category}</Badge>
-                              {idea.visibility === 'private' && <Badge variant="secondary" className="text-[10px]">Private</Badge>}
-                            </div>
-                            <h4 className="font-semibold text-sm text-foreground">{idea.title}</h4>
-                            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                              <Clock className="h-3 w-3" /> {hour > 12 ? hour-12 : hour}:00 - {hour+1 > 12 ? hour+1-12 : hour+1}:00
-                            </p>
-                          </div>
-                          
-                          {/* Button to remove from timeline back to pool */}
-                          <button 
-                            onClick={() => {
-                               // Simulate drag-drop to unscheduled
-                               supabase.from('idea_cards').update({ scheduled_date: null, start_time: null, end_time: null }).eq('id', idea.id).then(() => fetchTimeline());
-                            }}
-                            className="text-muted-foreground hover:text-destructive p-1"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </CardContent>
-                      </Card>
-                    ))}
-                    
-                    {/* Visual hint for dropzone when dragging */}
-                    {draggedIdea && itemsInHour.length === 0 && (
-                      <div className="hidden group-hover:block absolute inset-2 border-2 border-primary/40 border-dashed rounded-lg bg-primary/5 pointer-events-none" />
-                    )}
-                  </div>
+                  ))}
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* BACKGROUND GRID LINES */}
+            <div className="absolute inset-0 top-[29px] flex pointer-events-none z-0">
+              {Array.from({ length: tripDays.length * 24 }).map((_, i) => (
+                <div key={i} style={{ width: PIXELS_PER_HOUR }} className="shrink-0 border-r border-border/20 h-full" />
+              ))}
+            </div>
+
+            {/* CATEGORY LANES */}
+            <div className="relative z-10 flex-1 flex flex-col pt-2">
+              {CATEGORIES.map(category => {
+                const laneItems = packLane(scheduledIdeas.filter(i => i.category === category));
+                if (laneItems.length === 0) return null;
+
+                // Calculate required height based on overlapping rows
+                const maxRow = Math.max(0, ...laneItems.map(i => i.rowIndex));
+                const laneHeight = Math.max(80, (maxRow + 1) * 56 + 40);
+
+                return (
+                  <div key={category} style={{ minHeight: laneHeight }} className="relative border-b border-border/40 w-full group">
+                    <div className="sticky left-4 inline-block mt-2 px-2 py-0.5 bg-background/80 backdrop-blur rounded border text-xs font-bold text-muted-foreground uppercase z-10 shadow-sm">
+                      {category}
+                    </div>
+
+                    {laneItems.map(idea => {
+                      const left = getLeftPos(idea.start_datetime);
+                      const width = Math.max(20, getWidth(idea.start_datetime, idea.end_datetime)); // Min 20px wide
+                      const top = 36 + (idea.rowIndex * 54); // Stack overlaps neatly
+
+                      return (
+                        <div 
+                          key={idea.id}
+                          style={{ left, width, top, position: 'absolute' }}
+                          className={`h-12 rounded-md shadow-sm border bg-card hover:border-primary/50 hover:shadow-md transition-shadow group/card flex ${interaction?.id === idea.id ? 'z-50 ring-2 ring-primary' : 'z-20'}`}
+                        >
+                          {/* Left Resize Handle */}
+                          <div 
+                            className="w-3 shrink-0 cursor-ew-resize flex items-center justify-center hover:bg-primary/20 rounded-l-md"
+                            onMouseDown={(e) => handlePointerDown(e, 'resize-left', idea)}
+                          >
+                            <div className="w-0.5 h-4 bg-muted-foreground/30 rounded-full" />
+                          </div>
+
+                          {/* Card Body (Drag to Move) */}
+                          <div 
+                            className="flex-1 px-2 py-1 overflow-hidden cursor-grab active:cursor-grabbing flex flex-col justify-center"
+                            onMouseDown={(e) => handlePointerDown(e, 'move', idea)}
+                          >
+                            <div className="text-xs font-semibold truncate leading-tight">{idea.title}</div>
+                            <div className="text-[9px] text-muted-foreground truncate">
+                              {format(parseISO(idea.start_datetime), 'h:mm a')} - {format(parseISO(idea.end_datetime), 'h:mm a')}
+                            </div>
+                          </div>
+
+                          {/* Remove Button */}
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); removeFromTimeline(idea.id); }}
+                            className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover/card:opacity-100 transition-opacity hover:scale-110 z-30 shadow-md"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+
+                          {/* Right Resize Handle */}
+                          <div 
+                            className="w-3 shrink-0 cursor-ew-resize flex items-center justify-center hover:bg-primary/20 rounded-r-md"
+                            onMouseDown={(e) => handlePointerDown(e, 'resize-right', idea)}
+                          >
+                            <div className="w-0.5 h-4 bg-muted-foreground/30 rounded-full" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+
           </div>
         </div>
-
       </div>
     </div>
   );
