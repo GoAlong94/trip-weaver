@@ -96,48 +96,87 @@ export type Database = {
           category: string
           created_at: string
           created_by: string
+          currency: string | null
+          draft_version: string | null
+          end_datetime: string | null
           end_time: string | null
+          google_place_id: string | null
           id: string
           is_mandatory: boolean
+          location_address: string | null
+          location_lat: number | null
+          location_lng: number | null
           quantity: number
+          quantity_type: string | null
+          scheduled_date: string | null
+          shared_with: string[] | null
+          social_links: Json | null
+          start_datetime: string | null
           start_time: string | null
           status: string
           title: string
           trip_id: string
           unit_cost: number
           updated_at: string
+          upvotes: string[] | null
           visibility: string | null
         }
         Insert: {
           category?: string
           created_at?: string
           created_by: string
+          currency?: string | null
+          draft_version?: string | null
+          end_datetime?: string | null
           end_time?: string | null
+          google_place_id?: string | null
           id?: string
           is_mandatory?: boolean
+          location_address?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
           quantity?: number
+          quantity_type?: string | null
+          scheduled_date?: string | null
+          shared_with?: string[] | null
+          social_links?: Json | null
+          start_datetime?: string | null
           start_time?: string | null
           status?: string
           title: string
           trip_id: string
           unit_cost?: number
           updated_at?: string
+          upvotes?: string[] | null
           visibility?: string | null
         }
         Update: {
           category?: string
           created_at?: string
           created_by?: string
+          currency?: string | null
+          draft_version?: string | null
+          end_datetime?: string | null
           end_time?: string | null
+          google_place_id?: string | null
           id?: string
           is_mandatory?: boolean
+          location_address?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
           quantity?: number
+          quantity_type?: string | null
+          scheduled_date?: string | null
+          shared_with?: string[] | null
+          social_links?: Json | null
+          start_datetime?: string | null
           start_time?: string | null
           status?: string
           title?: string
           trip_id?: string
           unit_cost?: number
           updated_at?: string
+          upvotes?: string[] | null
           visibility?: string | null
         }
         Relationships: [
@@ -173,6 +212,38 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      trip_date_votes: {
+        Row: {
+          created_at: string | null
+          status: string | null
+          trip_id: string
+          user_id: string
+          vote_date: string
+        }
+        Insert: {
+          created_at?: string | null
+          status?: string | null
+          trip_id: string
+          user_id: string
+          vote_date: string
+        }
+        Update: {
+          created_at?: string | null
+          status?: string | null
+          trip_id?: string
+          user_id?: string
+          vote_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_date_votes_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       trip_invites: {
         Row: {
