@@ -102,7 +102,7 @@ export default function Timeline() {
 
   const removeFromTimeline = async (id: string) => {
     setIdeas(ideas.map(i => i.id === id ? { ...i, start_datetime: null, end_datetime: null } : i));
-    await supabase.from('idea_cards').update({ start_datetime: null, end_datetime: null }).eq('id', id);
+    await supabase.from('idea_cards').update({ start_datetime: null, end_datetime: null } as any).eq('id', id);
   };
 
   // --- CUSTOM MOUSE EVENTS: RESIZING & SLIDING ON TIMELINE ---
