@@ -124,7 +124,7 @@ export default function IdeaBoard() {
       : [...(idea.upvotes || []), user.id];
 
     setIdeas(ideas.map(i => i.id === idea.id ? { ...i, upvotes: newUpvotes } : i));
-    await supabase.from('idea_cards').update({ upvotes: newUpvotes }).eq('id', idea.id);
+    await supabase.from('idea_cards').update({ upvotes: newUpvotes } as any).eq('id', idea.id);
   };
 
   const moveDraft = async (idea: any, newVersion: string) => {
