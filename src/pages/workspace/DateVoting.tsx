@@ -60,7 +60,7 @@ export default function DateVoting() {
     // Optimistically update UI
     if (newStatus === 'clear') {
       setVotes(votes.filter(v => !(v.vote_date === dateStr && v.user_id === user.id)));
-      await supabase.from('trip_date_votes').delete().match({ trip_id: tripId, user_id: user.id, vote_date: dateStr });
+      await (supabase.from('trip_date_votes' as any) as any).delete().match({ trip_id: tripId, user_id: user.id, vote_date: dateStr });
     } else {
       const newVoteObj = { trip_id: tripId, user_id: user.id, vote_date: dateStr, status: newStatus };
       const otherVotes = votes.filter(v => !(v.vote_date === dateStr && v.user_id === user.id));
