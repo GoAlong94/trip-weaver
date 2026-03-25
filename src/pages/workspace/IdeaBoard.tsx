@@ -10,8 +10,10 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
+import IdeaCardModal from '@/components/IdeaCardModal';
 import { ThumbsUp, Trash2, Loader2, Eye, EyeOff, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { MapPin, Users, Link as LinkIcon, Trash2, Youtube, Instagram, Globe, Save, Loader2, DollarSign } from 'lucide-react';
 
 const CATEGORIES = ['Locations', 'Transportation', 'Lodging', 'Food', 'Excursions', 'Entertainment', 'Other'];
 const VERSIONS = [
@@ -29,6 +31,10 @@ export default function IdeaBoard() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [activeTab, setActiveTab] = useState('idea');
+  
+  // Modal & Card State
+  const [selectedIdea, setSelectedIdea] = useState<any | null>(null);
+  const [membersCount, setMembersCount] = useState(1);
 
   // Form State
   const [title, setTitle] = useState('');
@@ -51,9 +57,9 @@ export default function IdeaBoard() {
       .select('user_id, profiles(name)')
       .eq('trip_id', tripId);
     
-    // Filter out the current user from the checklist
     if (data) {
         setMembers(data.filter(m => m.user_id !== user?.id));
+        setMembersCount(data.length || 1); // Set count for the dynamic math engine
     }
   };
 
@@ -74,7 +80,6 @@ export default function IdeaBoard() {
     if (!user) return;
 
     try {
-      // If it's a subgroup, ensure the creator is also in the array so they don't lose access
       const finalSharedWith = visibility === 'subgroup' ? [...sharedWith, user.id] : [];
 
       const newIdea = {
@@ -97,7 +102,6 @@ export default function IdeaBoard() {
       toast.success('Idea added successfully!');
       setShowForm(false);
       
-      // Reset Form
       setTitle(''); setQuantity(1); setUnitCost(0); setIsMandatory(true); 
       setVisibility('public'); setSharedWith([]);
       
@@ -141,7 +145,7 @@ export default function IdeaBoard() {
     .sort((a, b) => (b.upvotes?.length || 0) - (a.upvotes?.length || 0));
 
   return (
-    <div className="p-6 h-[calc(100vh-73px)] flex flex-col">
+    <div className="p-6 h-[calc(100vh-73px)] flex flex-col relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
           <h2 className="text-2xl font-bold">The Planning Board</h2>
@@ -201,7 +205,6 @@ export default function IdeaBoard() {
 
               <Button type="submit" className="w-full h-10 lg:mt-6">Save Idea</Button>
               
-              {/* SUB-GROUP MEMBER SELECTION */}
               {visibility === 'subgroup' && members.length > 0 && (
                   <div className="lg:col-span-6 bg-background p-4 rounded-md border mt-2">
                       <Label className="mb-3 block">Who is invited?</Label>
@@ -243,10 +246,14 @@ export default function IdeaBoard() {
                   const hasUpvoted = idea.upvotes?.includes(user?.id);
                   
                   return (
-                    <Card key={idea.id} className="shadow-sm border-border/50 hover:border-primary/30 transition-colors">
+                    <Card 
+                      key={idea.id} 
+                      onClick={() => setSelectedIdea(idea)}
+                      className="shadow-sm border-border/50 hover:border-primary/50 transition-colors cursor-pointer group"
+                    >
                       <CardHeader className="p-4 pb-2 flex flex-row items-start justify-between gap-2 space-y-0">
                         <div>
-                            <CardTitle className="text-base font-medium leading-tight">{idea.title}</CardTitle>
+                            <CardTitle className="text-base font-medium leading-tight group-hover:text-primary transition-colors">{idea.title}</CardTitle>
                             {idea.visibility !== 'public' && (
                                 <span className={`text-[10px] mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm ${idea.visibility === 'private' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-600'}`}>
                                     {idea.visibility === 'private' ? <EyeOff className="h-3 w-3"/> : <Users className="h-3 w-3"/>}
@@ -254,30 +261,41 @@ export default function IdeaBoard() {
                                 </span>
                             )}
                         </div>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive -mt-1 -mr-2 shrink-0" onClick={() => deleteIdea(idea.id)}>
+                        {/* Stop propagation so deleting doesn't open the modal */}
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive -mt-1 -mr-2 shrink-0" 
+                          onClick={(e) => { e.stopPropagation(); deleteIdea(idea.id); }}
+                        >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </CardHeader>
+                      
                       <CardContent className="p-4 pt-0 text-sm flex flex-col gap-3">
                         <div className="flex justify-between items-center pt-2 border-t mt-2">
+                          {/* Stop propagation so voting doesn't open the modal */}
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            onClick={() => toggleUpvote(idea)} 
+                            onClick={(e) => { e.stopPropagation(); toggleUpvote(idea); }} 
                             className={`h-8 px-2 ${hasUpvoted ? 'text-primary bg-primary/10 hover:bg-primary/20' : 'text-muted-foreground hover:text-foreground'}`}
                           >
                             <ThumbsUp className={`w-4 h-4 mr-1.5 ${hasUpvoted ? 'fill-primary' : ''}`} />
                             <span className="font-medium">{idea.upvotes?.length || 0}</span>
                           </Button>
 
-                          <Select value={idea.draft_version || 'idea'} onValueChange={(val) => moveDraft(idea, val)}>
-                            <SelectTrigger className="w-[120px] h-8 text-xs bg-background">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {VERSIONS.map(v => <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
+                          {/* Stop propagation on the select wrapper */}
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <Select value={idea.draft_version || 'idea'} onValueChange={(val) => moveDraft(idea, val)}>
+                              <SelectTrigger className="w-[120px] h-8 text-xs bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {VERSIONS.map(v => <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -288,6 +306,15 @@ export default function IdeaBoard() {
           );
         })}
       </div>
+
+      {/* SUPER CARD MODAL */}
+      <IdeaCardModal 
+        idea={selectedIdea} 
+        isOpen={!!selectedIdea} 
+        onClose={() => setSelectedIdea(null)} 
+        onUpdate={fetchIdeas}
+        memberCount={membersCount}
+      />
     </div>
   );
 }
