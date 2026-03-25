@@ -11,9 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import IdeaCardModal from '@/components/IdeaCardModal';
-import { ThumbsUp, Trash2, Loader2, Eye, EyeOff, Users } from 'lucide-react';
+import { ThumbsUp, Trash2, Loader2, Eye, EyeOff, Users, MapPin, LinkIcon, Youtube, Instagram, Globe, Save, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
-import { MapPin, Users, Link as LinkIcon, Trash2, Youtube, Instagram, Globe, Save, Loader2, DollarSign } from 'lucide-react';
 
 const CATEGORIES = ['Locations', 'Transportation', 'Lodging', 'Food', 'Excursions', 'Entertainment', 'Other'];
 const VERSIONS = [
