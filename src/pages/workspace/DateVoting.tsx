@@ -66,7 +66,7 @@ export default function DateVoting() {
       const otherVotes = votes.filter(v => !(v.vote_date === dateStr && v.user_id === user.id));
       setVotes([...otherVotes, newVoteObj]);
       
-      await supabase.from('trip_date_votes').upsert(newVoteObj);
+      await (supabase.from('trip_date_votes' as any) as any).upsert(newVoteObj);
     }
   };
 

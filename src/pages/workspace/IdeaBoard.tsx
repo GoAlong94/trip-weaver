@@ -129,7 +129,7 @@ export default function IdeaBoard() {
 
   const moveDraft = async (idea: any, newVersion: string) => {
     setIdeas(ideas.map(i => i.id === idea.id ? { ...i, draft_version: newVersion } : i));
-    await supabase.from('idea_cards').update({ draft_version: newVersion }).eq('id', idea.id);
+    await supabase.from('idea_cards').update({ draft_version: newVersion } as any).eq('id', idea.id);
   };
 
   const deleteIdea = async (id: string) => {
