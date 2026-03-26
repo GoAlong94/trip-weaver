@@ -17,19 +17,22 @@ interface IdeaCardModalProps {
   memberCount: number;
 }
 
-// HELPER: Ensures links always open externally instead of breaking routing
 const formatExternalUrl = (url: string) => {
   if (!url) return '#';
-  if (!url.match(/^https?:\/\//i)) {
-    return `https://${url}`;
-  }
+  if (!url.match(/^https?:\/\//i)) return `https://${url}`;
   return url;
+};
+
+// Helper to extract YouTube ID for rich embedding
+const getYoutubeId = (url: string) => {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
 };
 
 export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberCount }: IdeaCardModalProps) {
   const [loading, setLoading] = useState(false);
   
-  // Local State
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
   const [unitCost, setUnitCost] = useState(0);
@@ -38,7 +41,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
   const [quantity, setQuantity] = useState(1);
   const [address, setAddress] = useState('');
   
-  // Links State
   const [newLink, setNewLink] = useState('');
   const [socialLinks, setSocialLinks] = useState<string[]>([]);
 
@@ -64,23 +66,14 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
   const handleSave = async () => {
     if (!idea) return;
     setLoading(true);
-    
     try {
-      const { error } = await supabase
-        .from('idea_cards')
-        .update({
-          title,
-          unit_cost: unitCost,
-          currency,
-          quantity_type: quantityType,
-          quantity: quantityType === 'fixed' ? quantity : 1,
-          location_address: address,
-          social_links: socialLinks
-        })
-        .eq('id', idea.id);
+      const { error } = await supabase.from('idea_cards').update({
+        title, unit_cost: unitCost, currency, quantity_type: quantityType,
+        quantity: quantityType === 'fixed' ? quantity : 1,
+        location_address: address, social_links: socialLinks
+      }).eq('id', idea.id);
 
       if (error) throw error;
-      
       toast.success('Card details saved!');
       onUpdate(); 
       onClose();
@@ -107,6 +100,11 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     return <Globe className="h-4 w-4 text-blue-500" />;
   };
 
+  // Safe external click handler that breaks out of iframes
+  const handleExternalClick = (url: string) => {
+    window.open(formatExternalUrl(url), '_blank', 'noopener,noreferrer');
+  };
+
   const effectiveQuantity = quantityType === 'per_person' ? memberCount : quantity;
   const totalCost = unitCost * effectiveQuantity;
 
@@ -126,8 +124,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </Button>
           </div>
           <Input 
-            value={title} 
-            onChange={e => setTitle(e.target.value)} 
+            value={title} onChange={e => setTitle(e.target.value)} 
             className="text-2xl font-bold font-display h-auto py-2 border-transparent hover:border-input focus-visible:ring-primary/20 transition-all bg-transparent px-0 rounded-none shadow-none"
           />
         </div>
@@ -182,7 +179,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
-          {/* SECTION 2: LIVE MAPS */}
+          {/* SECTION 2: LIVE MAPS (FIXED) */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <MapPin className="h-4 w-4" /> Location Details
@@ -190,17 +187,12 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             <div className="space-y-3">
               <Input 
                 placeholder="Enter an exact address or city name..." 
-                value={address} 
-                onChange={e => setAddress(e.target.value)} 
+                value={address} onChange={e => setAddress(e.target.value)} 
               />
               <div className="w-full h-48 bg-muted rounded-xl border overflow-hidden relative">
                 {address ? (
                   <iframe 
-                    width="100%" 
-                    height="100%" 
-                    style={{ border: 0 }} 
-                    loading="lazy" 
-                    allowFullScreen 
+                    width="100%" height="100%" style={{ border: 0 }} loading="lazy" allowFullScreen 
                     src={`https://maps.google.com/maps?q=${encodeURIComponent(address)}&output=embed`}
                   />
                 ) : (
@@ -213,7 +205,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
-          {/* SECTION 3: MEDIA LINKS */}
+          {/* SECTION 3: MEDIA LINKS (RICH EMBEDS) */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <LinkIcon className="h-4 w-4" /> References & Media
@@ -222,33 +214,51 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             <div className="flex gap-2">
               <Input 
                 placeholder="Paste YouTube, Instagram, or Website link..." 
-                value={newLink} 
-                onChange={e => setNewLink(e.target.value)} 
+                value={newLink} onChange={e => setNewLink(e.target.value)} 
                 onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addLink())}
               />
               <Button type="button" onClick={addLink} variant="secondary">Add</Button>
             </div>
 
             {socialLinks.length > 0 && (
-              <div className="space-y-2 mt-4">
-                {socialLinks.map((link, idx) => (
-                  <div key={idx} className="flex items-center justify-between bg-muted/40 border p-3 rounded-lg group">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      {getLinkIcon(link)}
-                      <a 
-                        href={formatExternalUrl(link)} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="text-sm text-foreground hover:text-primary hover:underline truncate"
-                      >
-                        {link}
-                      </a>
+              <div className="space-y-3 mt-4">
+                {socialLinks.map((link, idx) => {
+                  const ytId = getYoutubeId(link);
+                  return (
+                    <div key={idx} className="flex flex-col gap-2 bg-muted/40 border p-3 rounded-lg group">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          {getLinkIcon(link)}
+                          {/* Safe Link opening */}
+                          <button 
+                            onClick={() => handleExternalClick(link)}
+                            className="text-sm text-left text-foreground hover:text-primary hover:underline truncate"
+                          >
+                            {link}
+                          </button>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity" onClick={() => removeLink(idx)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      
+                      {/* RICH EMBED: If YouTube is detected, render the player! */}
+                      {ytId && (
+                        <div className="w-full aspect-video rounded-md overflow-hidden mt-2 bg-black border">
+                          <iframe
+                            width="100%"
+                            height="100%"
+                            src={`https://www.youtube.com/embed/${ytId}`}
+                            title="YouTube video player"
+                            frameBorder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          ></iframe>
+                        </div>
+                      )}
                     </div>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity" onClick={() => removeLink(idx)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
