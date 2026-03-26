@@ -64,13 +64,15 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     }
   }, [idea]);
 
-  // CRITICAL FIX: Switched to Open-Meteo. It never blocks client-side browser fetches.
+  // THE NEW SMARTER GEOCODER (Photon by Komoot)
   const geocodeAddress = async (searchAddress: string) => {
     try {
-      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchAddress)}&count=1&format=json`);
+      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(searchAddress)}&limit=1`);
       const data = await res.json();
-      if (data && data.results && data.results.length > 0) {
-        return { lat: data.results[0].latitude, lng: data.results[0].longitude };
+      if (data && data.features && data.features.length > 0) {
+        // Photon returns GeoJSON which is [longitude, latitude]
+        const coords = data.features[0].geometry.coordinates;
+        return { lat: coords[1], lng: coords[0] };
       }
     } catch (e) {
       console.error("Geocoding error", e);
