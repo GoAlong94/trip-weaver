@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Users, Link as LinkIcon, Trash2, Youtube, Instagram, Globe, Save, Loader2, DollarSign, ArrowRight } from 'lucide-react';
+import { MapPin, Users, Link as LinkIcon, Trash2, Youtube, Instagram, Globe, Save, Loader2, DollarSign, ArrowRight, Target } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface IdeaCardModalProps {
@@ -38,8 +38,14 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
   const [currency, setCurrency] = useState('₹');
   const [quantityType, setQuantityType] = useState('fixed');
   const [quantity, setQuantity] = useState(1);
+  
   const [address, setAddress] = useState('');
+  const [lat, setLat] = useState<string>('');
+  const [lng, setLng] = useState<string>('');
+  
   const [endAddress, setEndAddress] = useState('');
+  const [endLat, setEndLat] = useState<string>('');
+  const [endLng, setEndLng] = useState<string>('');
   
   const [newLink, setNewLink] = useState('');
   const [socialLinks, setSocialLinks] = useState<string[]>([]);
@@ -52,8 +58,14 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
       setCurrency(idea.currency || '₹');
       setQuantityType(idea.quantity_type || 'fixed');
       setQuantity(idea.quantity || 1);
+      
       setAddress(idea.location_address || '');
+      setLat(idea.location_lat ? String(idea.location_lat) : '');
+      setLng(idea.location_lng ? String(idea.location_lng) : '');
+      
       setEndAddress(idea.end_location_address || '');
+      setEndLat(idea.end_location_lat ? String(idea.end_location_lat) : '');
+      setEndLng(idea.end_location_lng ? String(idea.end_location_lng) : '');
       
       try {
         const parsedLinks = typeof idea.social_links === 'string' ? JSON.parse(idea.social_links) : idea.social_links;
@@ -64,20 +76,31 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     }
   }, [idea]);
 
-  // THE NEW SMARTER GEOCODER (Photon by Komoot)
-  const geocodeAddress = async (searchAddress: string) => {
+  // THE MANUAL API TESTER
+  const testGeocode = async (searchAddress: string, isDestination: boolean) => {
+    if (!searchAddress) return toast.error("Enter an address first");
     try {
       const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(searchAddress)}&limit=1`);
       const data = await res.json();
       if (data && data.features && data.features.length > 0) {
-        // Photon returns GeoJSON which is [longitude, latitude]
-        const coords = data.features[0].geometry.coordinates;
-        return { lat: coords[1], lng: coords[0] };
+        const coords = data.features[0].geometry.coordinates; // [lng, lat]
+        const foundLat = coords[1];
+        const foundLng = coords[0];
+        
+        if (isDestination) {
+          setEndLat(String(foundLat));
+          setEndLng(String(foundLng));
+        } else {
+          setLat(String(foundLat));
+          setLng(String(foundLng));
+        }
+        toast.success(`Found coordinates! Lat: ${foundLat}, Lng: ${foundLng}`);
+      } else {
+        toast.error("API found nothing. Please enter coordinates manually.");
       }
     } catch (e) {
-      console.error("Geocoding error", e);
+      toast.error("API request failed.");
     }
-    return null;
   };
 
   const handleSave = async () => {
@@ -85,38 +108,20 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     setLoading(true);
     
     try {
-      let lat = idea.location_lat;
-      let lng = idea.location_lng;
-      let eLat = idea.end_location_lat;
-      let eLng = idea.end_location_lng;
-      
-      // Geocode Origin
-      if (address && (address !== idea.location_address || lat === null)) {
-        const coords = await geocodeAddress(address);
-        if (coords) { 
-          lat = coords.lat; lng = coords.lng; 
-        } else {
-          toast.error(`Could not find coordinates for: ${address}`);
-        }
-      }
-
-      // Geocode Destination
-      if (category === 'Transportation' && endAddress && (endAddress !== idea.end_location_address || eLat === null)) {
-        const coords = await geocodeAddress(endAddress);
-        if (coords) { 
-          eLat = coords.lat; eLng = coords.lng; 
-        } else {
-          toast.error(`Could not find coordinates for: ${endAddress}`);
-        }
-      }
+      const finalLat = lat ? parseFloat(lat) : null;
+      const finalLng = lng ? parseFloat(lng) : null;
+      const finalEndLat = endLat ? parseFloat(endLat) : null;
+      const finalEndLng = endLng ? parseFloat(endLng) : null;
 
       const { error } = await supabase.from('idea_cards').update({
         title, unit_cost: unitCost, currency, quantity_type: quantityType,
         quantity: quantityType === 'fixed' ? quantity : 1,
-        location_address: address, location_lat: lat, location_lng: lng,
+        location_address: address, 
+        location_lat: finalLat, 
+        location_lng: finalLng,
         end_location_address: category === 'Transportation' ? endAddress : null,
-        end_location_lat: category === 'Transportation' ? eLat : null,
-        end_location_lng: category === 'Transportation' ? eLng : null,
+        end_location_lat: category === 'Transportation' ? finalEndLat : null,
+        end_location_lng: category === 'Transportation' ? finalEndLng : null,
         social_links: socialLinks
       }).eq('id', idea.id);
 
@@ -171,6 +176,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
 
         <div className="p-6 space-y-8 flex-1">
           
+          {/* BUDGET */}
           <div className="space-y-4">
             <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4" /> Budget & Quantity
@@ -216,22 +222,49 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
+          {/* LOCATION WITH EXPOSED LOGS/COORDINATES */}
           <div className="space-y-4">
-             <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <MapPin className="h-4 w-4" /> Routing & Location
-            </h3>
-            <div className="space-y-3">
+             <div className="flex justify-between items-center">
+               <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <MapPin className="h-4 w-4" /> Routing & Location
+               </h3>
+             </div>
+             
+            <div className="space-y-6">
               
-              {category === 'Transportation' ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 space-y-1"><Label className="text-xs">Origin</Label><Input value={address} onChange={e => setAddress(e.target.value)} /></div>
-                  <ArrowRight className="h-4 w-4 mt-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 space-y-1"><Label className="text-xs">Destination</Label><Input value={endAddress} onChange={e => setEndAddress(e.target.value)} /></div>
+              {/* ORIGIN BLOCK */}
+              <div className="p-4 border rounded-xl bg-card space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">{category === 'Transportation' ? 'Origin Address' : 'Address'}</Label>
+                  <div className="flex gap-2">
+                    <Input value={address} onChange={e => setAddress(e.target.value)} />
+                    <Button variant="secondary" onClick={() => testGeocode(address, false)}><Target className="h-4 w-4 mr-2"/> Test API</Button>
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-1"><Label className="text-xs">Address</Label><Input value={address} onChange={e => setAddress(e.target.value)} /></div>
+                <div className="flex gap-2">
+                  <div className="flex-1 space-y-1"><Label className="text-[10px] text-muted-foreground">Raw Latitude</Label><Input className="h-8 text-xs bg-muted" value={lat} onChange={e => setLat(e.target.value)} /></div>
+                  <div className="flex-1 space-y-1"><Label className="text-[10px] text-muted-foreground">Raw Longitude</Label><Input className="h-8 text-xs bg-muted" value={lng} onChange={e => setLng(e.target.value)} /></div>
+                </div>
+              </div>
+
+              {/* DESTINATION BLOCK (TRANSPORTATION ONLY) */}
+              {category === 'Transportation' && (
+                <div className="p-4 border rounded-xl bg-card space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Destination Address</Label>
+                    <div className="flex gap-2">
+                      <Input value={endAddress} onChange={e => setEndAddress(e.target.value)} />
+                      <Button variant="secondary" onClick={() => testGeocode(endAddress, true)}><Target className="h-4 w-4 mr-2"/> Test API</Button>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="flex-1 space-y-1"><Label className="text-[10px] text-muted-foreground">Raw Latitude</Label><Input className="h-8 text-xs bg-muted" value={endLat} onChange={e => setEndLat(e.target.value)} /></div>
+                    <div className="flex-1 space-y-1"><Label className="text-[10px] text-muted-foreground">Raw Longitude</Label><Input className="h-8 text-xs bg-muted" value={endLng} onChange={e => setEndLng(e.target.value)} /></div>
+                  </div>
+                </div>
               )}
 
+              {/* GOOGLE MAP PREVIEW */}
               <div className="w-full h-48 bg-muted rounded-xl border overflow-hidden relative">
                 {address ? (
                   <iframe 
@@ -250,6 +283,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
+          {/* MEDIA LINKS */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <LinkIcon className="h-4 w-4" /> References & Media
