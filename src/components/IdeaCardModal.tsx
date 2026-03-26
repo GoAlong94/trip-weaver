@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,10 +17,19 @@ interface IdeaCardModalProps {
   memberCount: number;
 }
 
+// HELPER: Ensures links always open externally instead of breaking routing
+const formatExternalUrl = (url: string) => {
+  if (!url) return '#';
+  if (!url.match(/^https?:\/\//i)) {
+    return `https://${url}`;
+  }
+  return url;
+};
+
 export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberCount }: IdeaCardModalProps) {
   const [loading, setLoading] = useState(false);
   
-  // Local State for all rich fields
+  // Local State
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
   const [unitCost, setUnitCost] = useState(0);
@@ -33,7 +42,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
   const [newLink, setNewLink] = useState('');
   const [socialLinks, setSocialLinks] = useState<string[]>([]);
 
-  // Sync state when a new idea is passed in
   useEffect(() => {
     if (idea) {
       setTitle(idea.title || '');
@@ -44,7 +52,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
       setQuantity(idea.quantity || 1);
       setAddress(idea.location_address || '');
       
-      // Safely parse JSONB array
       try {
         const parsedLinks = typeof idea.social_links === 'string' ? JSON.parse(idea.social_links) : idea.social_links;
         setSocialLinks(Array.isArray(parsedLinks) ? parsedLinks : []);
@@ -66,7 +73,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
           unit_cost: unitCost,
           currency,
           quantity_type: quantityType,
-          quantity: quantityType === 'fixed' ? quantity : 1, // Reset qty if per_person
+          quantity: quantityType === 'fixed' ? quantity : 1,
           location_address: address,
           social_links: socialLinks
         })
@@ -75,7 +82,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
       if (error) throw error;
       
       toast.success('Card details saved!');
-      onUpdate(); // Trigger parent refresh
+      onUpdate(); 
       onClose();
     } catch (error: any) {
       toast.error(error.message || 'Failed to save card');
@@ -100,7 +107,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     return <Globe className="h-4 w-4 text-blue-500" />;
   };
 
-  // Math Engine
   const effectiveQuantity = quantityType === 'per_person' ? memberCount : quantity;
   const totalCost = unitCost * effectiveQuantity;
 
@@ -128,21 +134,19 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
 
         <div className="p-6 space-y-8 flex-1">
           
-          {/* SECTION 1: DYNAMIC MATH & BUDGET */}
+          {/* SECTION 1: BUDGET */}
           <div className="space-y-4">
             <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4" /> Budget & Quantity
             </h3>
-            
             <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-xl border">
-              
               <div className="space-y-2">
                 <Label className="text-xs">Pricing Model</Label>
                 <Select value={quantityType} onValueChange={setQuantityType}>
                   <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="fixed">Fixed Total (e.g. 1 Car)</SelectItem>
-                    <SelectItem value="per_person">Per Person (x{memberCount} members)</SelectItem>
+                    <SelectItem value="fixed">Fixed Total</SelectItem>
+                    <SelectItem value="per_person">Per Person (x{memberCount})</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -154,47 +158,41 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label className="text-xs">Unit Cost & Currency</Label>
+              <div className="space-y-2 col-span-2 md:col-span-1">
+                <Label className="text-xs">Unit Cost</Label>
                 <div className="flex gap-2">
                   <Select value={currency} onValueChange={setCurrency}>
-                    <SelectTrigger className="w20 bg-background"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-[80px] bg-background"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="₹">₹ INR</SelectItem>
-                      <SelectItem value="$">$ USD</SelectItem>
-                      <SelectItem value="€">€ EUR</SelectItem>
+                      <SelectItem value="₹">₹</SelectItem>
+                      <SelectItem value="$">$</SelectItem>
+                      <SelectItem value="€">€</SelectItem>
                     </SelectContent>
                   </Select>
                   <Input type="number" min="0" value={unitCost} onChange={e => setUnitCost(Number(e.target.value))} className="bg-background flex-1" />
                 </div>
               </div>
 
-              {/* LIVE TOTAL CALCULATION */}
               <div className="col-span-2 mt-2 pt-4 border-t flex justify-between items-center">
-                <div className="text-sm text-muted-foreground">
-                  Total Estimated Cost: 
-                  {quantityType === 'per_person' && <span className="ml-2 bg-primary/10 text-primary px-2 py-0.5 rounded text-xs">Unit x {memberCount} Members</span>}
-                </div>
+                <div className="text-sm text-muted-foreground">Estimated Total:</div>
                 <div className="text-2xl font-bold font-mono text-primary">
                   {currency}{(totalCost).toLocaleString()}
                 </div>
               </div>
-
             </div>
           </div>
 
-          {/* SECTION 2: LIVE MAPS & LOCATION */}
+          {/* SECTION 2: LIVE MAPS */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <MapPin className="h-4 w-4" /> Location Details
             </h3>
             <div className="space-y-3">
               <Input 
-                placeholder="Enter an exact address or Google Maps place name..." 
+                placeholder="Enter an exact address or city name..." 
                 value={address} 
                 onChange={e => setAddress(e.target.value)} 
               />
-              {/* Dynamic Google Maps Embed based on the address string */}
               <div className="w-full h-48 bg-muted rounded-xl border overflow-hidden relative">
                 {address ? (
                   <iframe 
@@ -215,7 +213,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
-          {/* SECTION 3: MEDIA & SOCIAL LINKS */}
+          {/* SECTION 3: MEDIA LINKS */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <LinkIcon className="h-4 w-4" /> References & Media
@@ -237,7 +235,12 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
                   <div key={idx} className="flex items-center justify-between bg-muted/40 border p-3 rounded-lg group">
                     <div className="flex items-center gap-3 overflow-hidden">
                       {getLinkIcon(link)}
-                      <a href={link} target="_blank" rel="noreferrer" className="text-sm text-foreground hover:text-primary hover:underline truncate">
+                      <a 
+                        href={formatExternalUrl(link)} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="text-sm text-foreground hover:text-primary hover:underline truncate"
+                      >
                         {link}
                       </a>
                     </div>
