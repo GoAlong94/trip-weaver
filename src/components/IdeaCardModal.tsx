@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Users, Link as LinkIcon, Trash2, Youtube, Instagram, Globe, Save, Loader2, DollarSign } from 'lucide-react';
+import { MapPin, Users, Link as LinkIcon, Trash2, Youtube, Instagram, Globe, Save, Loader2, DollarSign, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface IdeaCardModalProps {
@@ -39,6 +39,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
   const [quantityType, setQuantityType] = useState('fixed');
   const [quantity, setQuantity] = useState(1);
   const [address, setAddress] = useState('');
+  const [endAddress, setEndAddress] = useState(''); // NEW: Destination State
   
   const [newLink, setNewLink] = useState('');
   const [socialLinks, setSocialLinks] = useState<string[]>([]);
@@ -52,6 +53,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
       setQuantityType(idea.quantity_type || 'fixed');
       setQuantity(idea.quantity || 1);
       setAddress(idea.location_address || '');
+      setEndAddress(idea.end_location_address || '');
       
       try {
         const parsedLinks = typeof idea.social_links === 'string' ? JSON.parse(idea.social_links) : idea.social_links;
@@ -62,33 +64,48 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     }
   }, [idea]);
 
+  const geocodeAddress = async (searchAddress: string) => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchAddress)}`, {
+        headers: { 'User-Agent': 'Wanderloom-TripPlanner/1.0' } // Required by Nominatim API
+      });
+      const data = await res.json();
+      if (data && data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    } catch (e) {
+      console.error("Geocoding error", e);
+    }
+    return null;
+  };
+
   const handleSave = async () => {
     if (!idea) return;
     setLoading(true);
     
     try {
-      // AUTO-GEOCODER: Fetch coordinates before saving if address exists
       let lat = idea.location_lat;
       let lng = idea.location_lng;
+      let eLat = idea.end_location_lat;
+      let eLng = idea.end_location_lng;
       
+      // Geocode Origin
       if (address && address !== idea.location_address) {
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
-          const data = await res.json();
-          if (data && data.length > 0) {
-            lat = parseFloat(data[0].lat);
-            lng = parseFloat(data[0].lon);
-            toast.success("Location geocoded successfully!");
-          }
-        } catch (geoError) {
-          console.error("Geocoding failed", geoError);
-        }
+        const coords = await geocodeAddress(address);
+        if (coords) { lat = coords.lat; lng = coords.lng; }
+      }
+
+      // Geocode Destination (Only if Transportation)
+      if (category === 'Transportation' && endAddress && endAddress !== idea.end_location_address) {
+        const coords = await geocodeAddress(endAddress);
+        if (coords) { eLat = coords.lat; eLng = coords.lng; }
       }
 
       const { error } = await supabase.from('idea_cards').update({
         title, unit_cost: unitCost, currency, quantity_type: quantityType,
         quantity: quantityType === 'fixed' ? quantity : 1,
         location_address: address, location_lat: lat, location_lng: lng,
+        end_location_address: category === 'Transportation' ? endAddress : null,
+        end_location_lat: category === 'Transportation' ? eLat : null,
+        end_location_lng: category === 'Transportation' ? eLng : null,
         social_links: socialLinks
       }).eq('id', idea.id);
 
@@ -108,10 +125,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     setSocialLinks([...socialLinks, newLink.trim()]);
     setNewLink('');
   };
-
-  const removeLink = (index: number) => {
-    setSocialLinks(socialLinks.filter((_, i) => i !== index));
-  };
+  const removeLink = (index: number) => setSocialLinks(socialLinks.filter((_, i) => i !== index));
 
   const getLinkIcon = (url: string) => {
     if (url.includes('youtube.com') || url.includes('youtu.be')) return <Youtube className="h-4 w-4 text-red-500" />;
@@ -119,9 +133,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     return <Globe className="h-4 w-4 text-blue-500" />;
   };
 
-  const handleExternalClick = (url: string) => {
-    window.open(formatExternalUrl(url), '_blank', 'noopener,noreferrer');
-  };
+  const handleExternalClick = (url: string) => window.open(formatExternalUrl(url), '_blank', 'noopener,noreferrer');
 
   const effectiveQuantity = quantityType === 'per_person' ? memberCount : quantity;
   const totalCost = unitCost * effectiveQuantity;
@@ -149,7 +161,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
 
         <div className="p-6 space-y-8 flex-1">
           
-          {/* SECTION 1: BUDGET */}
+          {/* BUDGET */}
           <div className="space-y-4">
             <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4" /> Budget & Quantity
@@ -190,28 +202,35 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
 
               <div className="col-span-2 mt-2 pt-4 border-t flex justify-between items-center">
                 <div className="text-sm text-muted-foreground">Estimated Total:</div>
-                <div className="text-2xl font-bold font-mono text-primary">
-                  {currency}{(totalCost).toLocaleString()}
-                </div>
+                <div className="text-2xl font-bold font-mono text-primary">{currency}{(totalCost).toLocaleString()}</div>
               </div>
             </div>
           </div>
 
-          {/* SECTION 2: LIVE MAPS */}
+          {/* TWO-POINT MAPS */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <MapPin className="h-4 w-4" /> Location Details
+              <MapPin className="h-4 w-4" /> Routing & Location
             </h3>
             <div className="space-y-3">
-              <Input 
-                placeholder="Enter an exact address or city name..." 
-                value={address} onChange={e => setAddress(e.target.value)} 
-              />
+              
+              {category === 'Transportation' ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 space-y-1"><Label className="text-xs">Origin</Label><Input value={address} onChange={e => setAddress(e.target.value)} /></div>
+                  <ArrowRight className="h-4 w-4 mt-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1 space-y-1"><Label className="text-xs">Destination</Label><Input value={endAddress} onChange={e => setEndAddress(e.target.value)} /></div>
+                </div>
+              ) : (
+                <div className="space-y-1"><Label className="text-xs">Address</Label><Input value={address} onChange={e => setAddress(e.target.value)} /></div>
+              )}
+
               <div className="w-full h-48 bg-muted rounded-xl border overflow-hidden relative">
                 {address ? (
                   <iframe 
                     width="100%" height="100%" style={{ border: 0 }} loading="lazy" allowFullScreen 
-                    src={`https://maps.google.com/maps?q=${encodeURIComponent(address)}&t=&z=13&ie=UTF8&iwloc=&output=embed`}
+                    src={category === 'Transportation' && endAddress 
+                      ? `https://maps.google.com/maps?saddr=${encodeURIComponent(address)}&daddr=${encodeURIComponent(endAddress)}&output=embed`
+                      : `https://maps.google.com/maps?q=${encodeURIComponent(address)}&output=embed`}
                   />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
@@ -223,7 +242,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
-          {/* SECTION 3: MEDIA LINKS */}
+          {/* MEDIA LINKS */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <LinkIcon className="h-4 w-4" /> References & Media
@@ -247,12 +266,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 overflow-hidden">
                           {getLinkIcon(link)}
-                          <button 
-                            onClick={() => handleExternalClick(link)}
-                            className="text-sm text-left text-foreground hover:text-primary hover:underline truncate"
-                          >
-                            {link}
-                          </button>
+                          <button onClick={() => handleExternalClick(link)} className="text-sm text-left text-foreground hover:text-primary hover:underline truncate">{link}</button>
                         </div>
                         <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity" onClick={() => removeLink(idx)}>
                           <Trash2 className="h-3.5 w-3.5" />
@@ -262,11 +276,8 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
                       {ytId && (
                         <div className="w-full aspect-video rounded-md overflow-hidden mt-2 bg-black border">
                           <iframe
-                            width="100%" height="100%"
-                            src={`https://www.youtube.com/embed/${ytId}`}
-                            title="YouTube video player" frameBorder="0"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
+                            width="100%" height="100%" src={`https://www.youtube.com/embed/${ytId}`}
+                            title="YouTube video player" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
                           ></iframe>
                         </div>
                       )}
