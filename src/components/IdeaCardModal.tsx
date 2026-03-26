@@ -39,7 +39,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
   const [quantityType, setQuantityType] = useState('fixed');
   const [quantity, setQuantity] = useState(1);
   const [address, setAddress] = useState('');
-  const [endAddress, setEndAddress] = useState(''); // NEW: Destination State
+  const [endAddress, setEndAddress] = useState('');
   
   const [newLink, setNewLink] = useState('');
   const [socialLinks, setSocialLinks] = useState<string[]>([]);
@@ -64,13 +64,14 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     }
   }, [idea]);
 
+  // CRITICAL FIX: Switched to Open-Meteo. It never blocks client-side browser fetches.
   const geocodeAddress = async (searchAddress: string) => {
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchAddress)}`, {
-        headers: { 'User-Agent': 'Wanderloom-TripPlanner/1.0' } // Required by Nominatim API
-      });
+      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchAddress)}&count=1&format=json`);
       const data = await res.json();
-      if (data && data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      if (data && data.results && data.results.length > 0) {
+        return { lat: data.results[0].latitude, lng: data.results[0].longitude };
+      }
     } catch (e) {
       console.error("Geocoding error", e);
     }
@@ -88,15 +89,23 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
       let eLng = idea.end_location_lng;
       
       // Geocode Origin
-      if (address && address !== idea.location_address) {
+      if (address && (address !== idea.location_address || lat === null)) {
         const coords = await geocodeAddress(address);
-        if (coords) { lat = coords.lat; lng = coords.lng; }
+        if (coords) { 
+          lat = coords.lat; lng = coords.lng; 
+        } else {
+          toast.error(`Could not find coordinates for: ${address}`);
+        }
       }
 
-      // Geocode Destination (Only if Transportation)
-      if (category === 'Transportation' && endAddress && endAddress !== idea.end_location_address) {
+      // Geocode Destination
+      if (category === 'Transportation' && endAddress && (endAddress !== idea.end_location_address || eLat === null)) {
         const coords = await geocodeAddress(endAddress);
-        if (coords) { eLat = coords.lat; eLng = coords.lng; }
+        if (coords) { 
+          eLat = coords.lat; eLng = coords.lng; 
+        } else {
+          toast.error(`Could not find coordinates for: ${endAddress}`);
+        }
       }
 
       const { error } = await supabase.from('idea_cards').update({
@@ -144,7 +153,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="w-full sm:max-w-md md:max-w-lg lg:max-w-xl overflow-y-auto p-0 flex flex-col h-full border-l">
         
-        {/* HEADER */}
         <div className="p-6 border-b bg-muted/20 sticky top-0 z-10 backdrop-blur-xl">
           <div className="flex items-center justify-between mb-4">
             <Badge variant="outline" className="bg-background">{category}</Badge>
@@ -161,7 +169,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
 
         <div className="p-6 space-y-8 flex-1">
           
-          {/* BUDGET */}
           <div className="space-y-4">
             <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4" /> Budget & Quantity
@@ -207,7 +214,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
-          {/* TWO-POINT MAPS */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <MapPin className="h-4 w-4" /> Routing & Location
@@ -242,7 +248,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
-          {/* MEDIA LINKS */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <LinkIcon className="h-4 w-4" /> References & Media
