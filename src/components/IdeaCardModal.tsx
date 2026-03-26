@@ -23,7 +23,6 @@ const formatExternalUrl = (url: string) => {
   return url;
 };
 
-// Helper to extract YouTube ID for rich embedding
 const getYoutubeId = (url: string) => {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
@@ -66,11 +65,31 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
   const handleSave = async () => {
     if (!idea) return;
     setLoading(true);
+    
     try {
+      // AUTO-GEOCODER: Fetch coordinates before saving if address exists
+      let lat = idea.location_lat;
+      let lng = idea.location_lng;
+      
+      if (address && address !== idea.location_address) {
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+          const data = await res.json();
+          if (data && data.length > 0) {
+            lat = parseFloat(data[0].lat);
+            lng = parseFloat(data[0].lon);
+            toast.success("Location geocoded successfully!");
+          }
+        } catch (geoError) {
+          console.error("Geocoding failed", geoError);
+        }
+      }
+
       const { error } = await supabase.from('idea_cards').update({
         title, unit_cost: unitCost, currency, quantity_type: quantityType,
         quantity: quantityType === 'fixed' ? quantity : 1,
-        location_address: address, social_links: socialLinks
+        location_address: address, location_lat: lat, location_lng: lng,
+        social_links: socialLinks
       }).eq('id', idea.id);
 
       if (error) throw error;
@@ -100,7 +119,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     return <Globe className="h-4 w-4 text-blue-500" />;
   };
 
-  // Safe external click handler that breaks out of iframes
   const handleExternalClick = (url: string) => {
     window.open(formatExternalUrl(url), '_blank', 'noopener,noreferrer');
   };
@@ -179,7 +197,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
-          {/* SECTION 2: LIVE MAPS (FIXED) */}
+          {/* SECTION 2: LIVE MAPS */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <MapPin className="h-4 w-4" /> Location Details
@@ -193,7 +211,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
                 {address ? (
                   <iframe 
                     width="100%" height="100%" style={{ border: 0 }} loading="lazy" allowFullScreen 
-                    src={`https://maps.google.com/maps?q=${encodeURIComponent(address)}&output=embed`}
+                    src={`https://maps.google.com/maps?q=${encodeURIComponent(address)}&t=&z=13&ie=UTF8&iwloc=&output=embed`}
                   />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
@@ -205,7 +223,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
-          {/* SECTION 3: MEDIA LINKS (RICH EMBEDS) */}
+          {/* SECTION 3: MEDIA LINKS */}
           <div className="space-y-4">
              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <LinkIcon className="h-4 w-4" /> References & Media
@@ -229,7 +247,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 overflow-hidden">
                           {getLinkIcon(link)}
-                          {/* Safe Link opening */}
                           <button 
                             onClick={() => handleExternalClick(link)}
                             className="text-sm text-left text-foreground hover:text-primary hover:underline truncate"
@@ -242,15 +259,12 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
                         </Button>
                       </div>
                       
-                      {/* RICH EMBED: If YouTube is detected, render the player! */}
                       {ytId && (
                         <div className="w-full aspect-video rounded-md overflow-hidden mt-2 bg-black border">
                           <iframe
-                            width="100%"
-                            height="100%"
+                            width="100%" height="100%"
                             src={`https://www.youtube.com/embed/${ytId}`}
-                            title="YouTube video player"
-                            frameBorder="0"
+                            title="YouTube video player" frameBorder="0"
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                             allowFullScreen
                           ></iframe>
