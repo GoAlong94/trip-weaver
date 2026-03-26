@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { LayoutDashboard, Lightbulb, Clock, TrendingUp, Receipt, ArrowLeft, CalendarDays } from 'lucide-react';
+import { LayoutDashboard, Lightbulb, Clock, TrendingUp, Receipt, ArrowLeft, CalendarDays, MapIcon } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
   Sidebar,
@@ -16,6 +16,7 @@ const tabs = [
   { title: 'Dates', path: 'dates', icon: CalendarDays },
   { title: 'Idea Board', path: 'ideas', icon: Lightbulb },
   { title: 'Timeline', path: 'timeline', icon: Clock },
+  { title: 'Map View', path: 'map', icon: MapIcon },
   { title: 'Forecast', path: 'forecast', icon: TrendingUp },
   { title: 'Ledger', path: 'ledger', icon: Receipt },
 ];
