@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
-import { Loader2, Map as MapIcon } from 'lucide-react';
+import { Loader2, Map as MapIcon, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import IdeaCardModal from '@/components/IdeaCardModal';
 
@@ -13,9 +13,9 @@ export default function MapView() {
   const [loading, setLoading] = useState(true);
   const [membersCount, setMembersCount] = useState(1);
   const [selectedIdea, setSelectedIdea] = useState<any | null>(null);
+  const [hasPlottedPoints, setHasPlottedPoints] = useState(false);
   
   const [scriptsLoaded, setScriptsLoaded] = useState(false);
-  
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
 
@@ -28,14 +28,6 @@ export default function MapView() {
         clearInterval(checkInterval);
       }
     };
-
-    if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link');
-      link.id = 'leaflet-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-    }
 
     if (!document.getElementById('leaflet-script')) {
       const script = document.createElement('script');
@@ -75,8 +67,6 @@ export default function MapView() {
 
     if (!mapInstanceRef.current) {
       mapInstanceRef.current = L.map(mapRef.current).setView([20, 0], 2);
-      
-      // CRITICAL FIX: Changed to the primary, faster OpenStreetMap tile server
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '© OpenStreetMap'
@@ -85,10 +75,8 @@ export default function MapView() {
 
     const map = mapInstanceRef.current;
     
-    // Force a resize calculation to prevent gray tiles on initial load
-    setTimeout(() => {
-      map.invalidateSize();
-    }, 400);
+    // Force resize calculation
+    setTimeout(() => map.invalidateSize(), 400);
 
     map.eachLayer((layer: any) => {
       if (layer instanceof L.Marker || layer instanceof L.Polyline) {
@@ -97,7 +85,7 @@ export default function MapView() {
     });
 
     const bounds = L.latLngBounds();
-    let hasPoints = false;
+    let localHasPoints = false;
     const routePoints: [number, number][] = [];
 
     const scheduledIdeas = [...ideas]
@@ -128,25 +116,24 @@ export default function MapView() {
       `;
 
       if (idea.location_lat && idea.location_lng) {
-        hasPoints = true;
+        localHasPoints = true;
         const latlng = [idea.location_lat, idea.location_lng];
         bounds.extend(latlng);
         L.marker(latlng).addTo(map).bindPopup(createPopup(idea.category === 'Transportation' ? '(Origin)' : ''));
       }
 
       if (idea.category === 'Transportation' && idea.end_location_lat && idea.end_location_lng) {
-        hasPoints = true;
+        localHasPoints = true;
         const latlng = [idea.end_location_lat, idea.end_location_lng];
         bounds.extend(latlng);
         L.marker(latlng).addTo(map).bindPopup(createPopup('(Destination)'));
       }
     });
 
-    if (hasPoints) {
-      // Add a slight delay before flying to bounds to ensure map is ready
-      setTimeout(() => {
-        map.flyToBounds(bounds, { padding: [50, 50], duration: 1.5 });
-      }, 500);
+    setHasPlottedPoints(localHasPoints);
+
+    if (localHasPoints) {
+      setTimeout(() => map.flyToBounds(bounds, { padding: [50, 50], duration: 1.5 }), 500);
     }
 
   }, [ideas, loading, scriptsLoaded]);
@@ -176,22 +163,39 @@ export default function MapView() {
   if (!scriptsLoaded || loading) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <div className="h-[calc(100vh-73px)] flex flex-col relative w-full">
-      <div className="absolute top-6 left-6 z-[400] bg-card/90 backdrop-blur border p-4 rounded-xl shadow-lg max-w-sm pointer-events-auto">
-        <h2 className="text-xl font-bold flex items-center gap-2"><MapIcon className="h-5 w-5 text-primary"/> Interactive Map</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Geocoded locations are plotted here. Scheduled activities show connecting routes!
-        </p>
-      </div>
+    <>
+      {/* CRITICAL FIX: Direct CSS import prevents the iframe from blocking it */}
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      
+      <div className="h-[calc(100vh-73px)] flex flex-col relative w-full">
+        <div className="absolute top-6 left-6 z-[400] bg-card/90 backdrop-blur border p-4 rounded-xl shadow-lg max-w-sm pointer-events-auto">
+          <h2 className="text-xl font-bold flex items-center gap-2"><MapIcon className="h-5 w-5 text-primary"/> Interactive Map</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Geocoded locations are plotted here. Scheduled activities show connecting routes!
+          </p>
+        </div>
 
-      <div className="relative flex-1 w-full bg-muted/20">
-         <div ref={mapRef} className="absolute inset-0 z-0" />
-      </div>
+        <div className="relative flex-1 w-full bg-muted/20">
+           
+           {/* If no coordinates exist, show a helpful message instead of a blank ocean */}
+           {!hasPlottedPoints && (
+             <div className="absolute inset-0 z-[500] flex items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
+               <div className="bg-card p-6 rounded-xl shadow-lg border text-center max-w-sm">
+                 <MapPin className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-50" />
+                 <h3 className="font-semibold text-lg">No Coordinates Found</h3>
+                 <p className="text-sm text-muted-foreground mt-2">Open your Idea Cards and save an address to generate map coordinates.</p>
+               </div>
+             </div>
+           )}
 
-      <IdeaCardModal 
-        idea={selectedIdea} isOpen={!!selectedIdea} 
-        onClose={() => setSelectedIdea(null)} onUpdate={refreshData} memberCount={membersCount}
-      />
-    </div>
+           <div ref={mapRef} className="absolute inset-0 z-0" />
+        </div>
+
+        <IdeaCardModal 
+          idea={selectedIdea} isOpen={!!selectedIdea} 
+          onClose={() => setSelectedIdea(null)} onUpdate={refreshData} memberCount={membersCount}
+        />
+      </div>
+    </>
   );
 }
