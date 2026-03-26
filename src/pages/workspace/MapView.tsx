@@ -14,13 +14,11 @@ export default function MapView() {
   const [membersCount, setMembersCount] = useState(1);
   const [selectedIdea, setSelectedIdea] = useState<any | null>(null);
   
-  // Script loaded state prevents blank map renders
   const [scriptsLoaded, setScriptsLoaded] = useState(false);
   
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
 
-  // 1. Ensure scripts are fully loaded before doing anything
   useEffect(() => {
     let checkInterval: any;
 
@@ -51,7 +49,6 @@ export default function MapView() {
     return () => clearInterval(checkInterval);
   }, []);
 
-  // 2. Fetch Data
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -70,27 +67,29 @@ export default function MapView() {
     fetchData();
   }, [tripId]);
 
-  // 3. Initialize and Plot Map ONLY when scripts and data are ready
   useEffect(() => {
     if (!scriptsLoaded || loading || !mapRef.current) return;
 
     // @ts-ignore
     const L = window.L;
 
-    // Init map if it doesn't exist
     if (!mapInstanceRef.current) {
       mapInstanceRef.current = L.map(mapRef.current).setView([20, 0], 2);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      
+      // CRITICAL FIX: Changed to the primary, faster OpenStreetMap tile server
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
         attribution: '© OpenStreetMap'
       }).addTo(mapInstanceRef.current);
     }
 
     const map = mapInstanceRef.current;
     
-    // Invalidate size to fix the gray tile issue
-    setTimeout(() => map.invalidateSize(), 200);
+    // Force a resize calculation to prevent gray tiles on initial load
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 400);
 
-    // Clear old layers
     map.eachLayer((layer: any) => {
       if (layer instanceof L.Marker || layer instanceof L.Polyline) {
         map.removeLayer(layer);
@@ -101,7 +100,6 @@ export default function MapView() {
     let hasPoints = false;
     const routePoints: [number, number][] = [];
 
-    // Chronological line logic
     const scheduledIdeas = [...ideas]
       .filter(i => i.start_datetime)
       .sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
@@ -114,15 +112,14 @@ export default function MapView() {
     });
 
     if (routePoints.length > 1) {
-      L.polyline(routePoints, { color: '#0ea5e9', weight: 4, dashArray: '8, 8', opacity: 0.6 }).addTo(map);
+      L.polyline(routePoints, { color: '#ef4444', weight: 4, dashArray: '10, 10', opacity: 0.8 }).addTo(map);
     }
 
-    // Add Markers
     ideas.forEach(idea => {
       const createPopup = (label: string) => `
         <div style="min-width: 150px; padding: 4px;">
           <h4 style="font-weight: bold; margin: 0 0 4px 0; font-size: 14px;">${idea.title} ${label}</h4>
-          <span style="font-size: 10px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${idea.category}</span>
+          <span style="font-size: 10px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; color: black;">${idea.category}</span>
           <br/><button onclick="window.dispatchEvent(new CustomEvent('openCard', {detail: '${idea.id}'}))" 
                style="margin-top: 8px; width: 100%; background: #0f172a; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer;">
             View Details
@@ -130,7 +127,6 @@ export default function MapView() {
         </div>
       `;
 
-      // Origin Point
       if (idea.location_lat && idea.location_lng) {
         hasPoints = true;
         const latlng = [idea.location_lat, idea.location_lng];
@@ -138,7 +134,6 @@ export default function MapView() {
         L.marker(latlng).addTo(map).bindPopup(createPopup(idea.category === 'Transportation' ? '(Origin)' : ''));
       }
 
-      // Destination Point (Transportation only)
       if (idea.category === 'Transportation' && idea.end_location_lat && idea.end_location_lng) {
         hasPoints = true;
         const latlng = [idea.end_location_lat, idea.end_location_lng];
@@ -147,11 +142,15 @@ export default function MapView() {
       }
     });
 
-    if (hasPoints) map.fitBounds(bounds, { padding: [50, 50] });
+    if (hasPoints) {
+      // Add a slight delay before flying to bounds to ensure map is ready
+      setTimeout(() => {
+        map.flyToBounds(bounds, { padding: [50, 50], duration: 1.5 });
+      }, 500);
+    }
 
   }, [ideas, loading, scriptsLoaded]);
 
-  // Handle Popup Clicks
   useEffect(() => {
     const handleOpenCard = (e: any) => {
       const targetIdea = ideas.find(i => i.id === e.detail);
@@ -160,6 +159,19 @@ export default function MapView() {
     window.addEventListener('openCard', handleOpenCard);
     return () => window.removeEventListener('openCard', handleOpenCard);
   }, [ideas]);
+
+  const refreshData = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.from('idea_cards').select('*').eq('trip_id', tripId);
+      if (error) throw error;
+      setIdeas(data || []);
+    } catch (e) {
+      toast.error("Failed to refresh");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (!scriptsLoaded || loading) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
@@ -172,14 +184,13 @@ export default function MapView() {
         </p>
       </div>
 
-      {/* Critical Fix: Absolute inset-0 guarantees it fills the space */}
       <div className="relative flex-1 w-full bg-muted/20">
          <div ref={mapRef} className="absolute inset-0 z-0" />
       </div>
 
       <IdeaCardModal 
         idea={selectedIdea} isOpen={!!selectedIdea} 
-        onClose={() => setSelectedIdea(null)} onUpdate={() => {}} memberCount={membersCount}
+        onClose={() => setSelectedIdea(null)} onUpdate={refreshData} memberCount={membersCount}
       />
     </div>
   );
