@@ -25,7 +25,7 @@ const VERSIONS = [
 
 const CATEGORIES = ['Locations', 'Transportation', 'Lodging', 'Food', 'Excursions', 'Entertainment', 'Other'];
 
-// Modern "Liquid Glass" Color Palette
+// Modern "Liquid Glass" Color Palette - Consolidates hundreds of lines of CSS
 const CATEGORY_COLORS: Record<string, string> = {
   'Locations': 'bg-blue-500/20 border-blue-400/50 text-blue-950 dark:text-blue-50 hover:bg-blue-400/30',
   'Transportation': 'bg-purple-500/20 border-purple-400/50 text-purple-950 dark:text-purple-50 hover:bg-purple-400/30',
@@ -48,6 +48,7 @@ export default function Timeline() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('idea');
   
+  // Form State
   const [showForm, setShowForm] = useState(false);
   const [members, setMembers] = useState<any[]>([]);
   const [membersCount, setMembersCount] = useState(1);
@@ -57,13 +58,16 @@ export default function Timeline() {
   const [visibility, setVisibility] = useState('public');
   const [sharedWith, setSharedWith] = useState<string[]>([]);
 
+  // Modal State
   const [selectedIdea, setSelectedIdea] = useState<any | null>(null);
   
+  // Timeline Canvas State
   const [baseStart, setBaseStart] = useState<Date | null>(null);
   const [timelineHours, setTimelineHours] = useState<Date[]>([]);
-  const [pixelsPerHour, setPixelsPerHour] = useState(180); // Dynamic Zoom Level
+  const [pixelsPerHour, setPixelsPerHour] = useState(180);
   const timelineRef = useRef<HTMLDivElement>(null);
 
+  // Drag & Resize State
   const [interaction, setInteraction] = useState<{ type: 'move' | 'resize-left' | 'resize-right'; id: string; startX: number; originalStart: Date; originalEnd: Date; } | null>(null);
   const isDraggingRef = useRef(false);
 
@@ -101,7 +105,7 @@ export default function Timeline() {
       const scheduled = ideas.filter(i => (i.draft_version || 'idea') === activeTab && i.start_datetime && i.end_datetime);
       
       let earliest = Date.now();
-      let latest = earliest + 86400000;
+      let latest = earliest + 86400000; // Default to a 24h window if totally empty
 
       if (scheduled.length > 0) {
          earliest = Math.min(...scheduled.map(i => new Date(i.start_datetime).getTime()));
@@ -111,14 +115,15 @@ export default function Timeline() {
          latest = earliest + 86400000;
       }
 
+      // Exact padding: 2 hours before, 3 hours after the action
       const tStart = startOfHour(subHours(new Date(earliest), 2));
       const tEnd = startOfHour(addHours(new Date(latest), 3));
 
-      // Calculate the "Fit to Screen" Zoom Level
+      // Calculate the "Fit to Screen" Zoom Level dynamically
       if (timelineRef.current) {
         const totalHours = differenceInHours(tEnd, tStart);
         const containerWidth = timelineRef.current.clientWidth;
-        // Try to fit the timeline in the screen, but never squish smaller than 120px per hour
+        // Optimal zoom fills the screen, but never squishes smaller than 120px per hour
         const optimalZoom = Math.max(120, containerWidth / (totalHours || 1));
         setPixelsPerHour(optimalZoom);
       }
@@ -130,6 +135,7 @@ export default function Timeline() {
 
   const pixelsPerMinute = pixelsPerHour / 60;
 
+  // FORM HANDLERS
   const handleAddIdea = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -155,6 +161,7 @@ export default function Timeline() {
 
   const toggleSubGroupMember = (memberId: string) => setSharedWith(prev => prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]);
 
+  // DRAG & DROP FROM POOL
   const handleDragStartPool = (e: React.DragEvent, id: string) => e.dataTransfer.setData("ideaId", id);
 
   const handleDropOnTimeline = async (e: React.DragEvent) => {
@@ -169,6 +176,7 @@ export default function Timeline() {
     const dropMinutes = Math.floor(xPos / pixelsPerMinute);
     const newStart = addMinutes(baseStart, dropMinutes);
     const idea = ideas.find(i => i.id === id);
+    // Default duration: 24h for locations, 2h for everything else
     const durationMins = idea?.category === 'Locations' ? (24 * 60) : 120;
     const newEnd = addMinutes(newStart, durationMins);
 
@@ -181,6 +189,7 @@ export default function Timeline() {
     await supabase.from('idea_cards').update({ start_datetime: null, end_datetime: null }).eq('id', id);
   };
 
+  // TIMELINE INTERACTION (MOVE/RESIZE)
   const handlePointerDown = (e: React.MouseEvent, type: 'move' | 'resize-left' | 'resize-right', idea: any) => {
     e.stopPropagation();
     isDraggingRef.current = false;
@@ -192,7 +201,7 @@ export default function Timeline() {
     isDraggingRef.current = true;
     
     const deltaX = e.pageX - interaction.startX;
-    const deltaMins = Math.round(deltaX / pixelsPerMinute / 15) * 15; 
+    const deltaMins = Math.round(deltaX / pixelsPerMinute / 15) * 15; // Snap to 15m intervals
 
     setIdeas(prev => prev.map(idea => {
       if (idea.id !== interaction.id) return idea;
@@ -219,6 +228,7 @@ export default function Timeline() {
     if (idea) await updateIdeaDates(idea.id, new Date(idea.start_datetime), new Date(idea.end_datetime));
     
     setInteraction(null);
+    // Tiny delay ensures `onClick` knows it was a drag, preventing the modal from popping open accidentally
     setTimeout(() => { isDraggingRef.current = false; }, 100);
   }, [interaction, ideas]);
 
@@ -272,6 +282,7 @@ export default function Timeline() {
   return (
     <div className="p-6 h-[calc(100vh-73px)] flex flex-col overflow-hidden relative">
       
+      {/* HEADER & FORM TOGGLE */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4 shrink-0">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Continuous Planner</h2>
@@ -288,7 +299,7 @@ export default function Timeline() {
         </TabsList>
       </Tabs>
 
-      {/* NEW IDEA FORM */}
+      {/* INLINE NEW IDEA FORM */}
       {showForm && (
         <Card className="mb-6 border-primary/20 bg-muted/30 shadow-inner shrink-0">
           <CardContent className="pt-6">
@@ -320,13 +331,29 @@ export default function Timeline() {
                 <Input type="number" min="0" value={unitCost} onChange={(e) => setUnitCost(Number(e.target.value))} required />
               </div>
               <Button type="submit" className="w-full h-10 lg:mt-6">Add to Pool</Button>
+              
+              {visibility === 'subgroup' && members.length > 0 && (
+                  <div className="lg:col-span-6 bg-background p-4 rounded-md border mt-2">
+                      <Label className="mb-3 block">Who is invited?</Label>
+                      <div className="flex flex-wrap gap-4">
+                          {members.map(m => (
+                              <div key={m.user_id} className="flex items-center space-x-2">
+                                  <Checkbox id={`member-${m.user_id}`} checked={sharedWith.includes(m.user_id)} onCheckedChange={() => toggleSubGroupMember(m.user_id)}/>
+                                  <label htmlFor={`member-${m.user_id}`} className="text-sm font-medium leading-none">{m.profiles?.name || 'Unknown'}</label>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
             </form>
           </CardContent>
         </Card>
       )}
 
+      {/* MAIN WORKSPACE GRID */}
       <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
         
+        {/* SMART UNSCHEDULED BUCKET (Disappears completely when empty!) */}
         {unscheduledIdeas.length > 0 && (
           <div className="w-64 flex flex-col bg-muted/30 rounded-xl border shrink-0 overflow-hidden shadow-inner">
             <div className="p-3 border-b bg-muted/50 font-semibold text-sm uppercase flex items-center justify-between">
@@ -390,6 +417,7 @@ export default function Timeline() {
                 return (
                   <div key={category} style={{ minHeight: laneHeight }} className="relative w-full group mb-4">
                     
+                    {/* Floating Category Label */}
                     <div className="sticky left-4 inline-block px-3 py-1 bg-background/90 backdrop-blur-sm rounded-md border text-xs font-bold text-muted-foreground uppercase z-30 shadow-sm mb-2">
                       {category}
                     </div>
@@ -413,13 +441,15 @@ export default function Timeline() {
                             <div className="w-1 h-4 bg-foreground/20 rounded-full" />
                           </div>
 
+                          {/* THE MAGIC FIX: Overflow-clip contains boundaries, sticky slides text! */}
                           <div 
-                            className="flex-1 relative h-full flex items-center cursor-grab active:cursor-grabbing z-10 overflow-hidden px-2"
+                            className="flex-1 relative h-full flex items-center cursor-grab active:cursor-grabbing z-10"
+                            style={{ overflow: 'clip' }}
                             onMouseDown={(e) => handlePointerDown(e, 'move', idea)}
                             onClick={() => { if (!isDraggingRef.current) setSelectedIdea(idea); }}
                           >
-                              {/* LIQUID TEXT CONTAINER */}
-                              <div className="flex flex-col justify-center truncate w-full">
+                              {/* Sliding Text Label */}
+                              <div className="sticky left-2 z-30 pointer-events-none flex flex-col justify-center drop-shadow-sm px-2 w-max max-w-full">
                                 <div className="text-sm font-bold truncate tracking-tight">{idea.title}</div>
                                 <div className="text-[10px] font-semibold opacity-80 truncate">
                                   {format(parseISO(idea.start_datetime), 'h:mm a')} - {format(parseISO(idea.end_datetime), 'h:mm a')}
