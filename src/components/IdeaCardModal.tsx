@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Users, Link as LinkIcon, Trash2, Youtube, Instagram, Globe, Save, Loader2, DollarSign, ArrowRight, Target } from 'lucide-react';
+import { MapPin, Users, Link as LinkIcon, Trash2, Youtube, Instagram, Globe, Save, Loader2, DollarSign, ArrowRight, Target, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 
 interface IdeaCardModalProps {
   idea: any | null;
@@ -27,6 +28,12 @@ const getYoutubeId = (url: string) => {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
   return (match && match[2].length === 11) ? match[2] : null;
+};
+
+// Helper for <input type="datetime-local">
+const formatForInput = (isoString?: string) => {
+  if (!isoString) return '';
+  return format(new Date(isoString), "yyyy-MM-dd'T'HH:mm");
 };
 
 export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberCount }: IdeaCardModalProps) {
@@ -50,6 +57,10 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
   const [newLink, setNewLink] = useState('');
   const [socialLinks, setSocialLinks] = useState<string[]>([]);
 
+  // Manual Schedule State
+  const [startDatetime, setStartDatetime] = useState('');
+  const [endDatetime, setEndDatetime] = useState('');
+
   useEffect(() => {
     if (idea) {
       setTitle(idea.title || '');
@@ -67,6 +78,9 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
       setEndLat(idea.end_location_lat ? String(idea.end_location_lat) : '');
       setEndLng(idea.end_location_lng ? String(idea.end_location_lng) : '');
       
+      setStartDatetime(formatForInput(idea.start_datetime));
+      setEndDatetime(formatForInput(idea.end_datetime));
+
       try {
         const parsedLinks = typeof idea.social_links === 'string' ? JSON.parse(idea.social_links) : idea.social_links;
         setSocialLinks(Array.isArray(parsedLinks) ? parsedLinks : []);
@@ -76,27 +90,21 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
     }
   }, [idea]);
 
-  // THE MANUAL API TESTER
   const testGeocode = async (searchAddress: string, isDestination: boolean) => {
     if (!searchAddress) return toast.error("Enter an address first");
     try {
       const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(searchAddress)}&limit=1`);
       const data = await res.json();
       if (data && data.features && data.features.length > 0) {
-        const coords = data.features[0].geometry.coordinates; // [lng, lat]
-        const foundLat = coords[1];
-        const foundLng = coords[0];
-        
+        const coords = data.features[0].geometry.coordinates;
         if (isDestination) {
-          setEndLat(String(foundLat));
-          setEndLng(String(foundLng));
+          setEndLat(String(coords[1])); setEndLng(String(coords[0]));
         } else {
-          setLat(String(foundLat));
-          setLng(String(foundLng));
+          setLat(String(coords[1])); setLng(String(coords[0]));
         }
-        toast.success(`Found coordinates! Lat: ${foundLat}, Lng: ${foundLng}`);
+        toast.success(`Found coordinates!`);
       } else {
-        toast.error("API found nothing. Please enter coordinates manually.");
+        toast.error("API found nothing. Please enter manually.");
       }
     } catch (e) {
       toast.error("API request failed.");
@@ -112,17 +120,20 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
       const finalLng = lng ? parseFloat(lng) : null;
       const finalEndLat = endLat ? parseFloat(endLat) : null;
       const finalEndLng = endLng ? parseFloat(endLng) : null;
+      
+      const finalStart = startDatetime ? new Date(startDatetime).toISOString() : null;
+      const finalEnd = endDatetime ? new Date(endDatetime).toISOString() : null;
 
       const { error } = await supabase.from('idea_cards').update({
         title, unit_cost: unitCost, currency, quantity_type: quantityType,
         quantity: quantityType === 'fixed' ? quantity : 1,
-        location_address: address, 
-        location_lat: finalLat, 
-        location_lng: finalLng,
+        location_address: address, location_lat: finalLat, location_lng: finalLng,
         end_location_address: category === 'Transportation' ? endAddress : null,
         end_location_lat: category === 'Transportation' ? finalEndLat : null,
         end_location_lng: category === 'Transportation' ? finalEndLng : null,
-        social_links: socialLinks
+        social_links: socialLinks,
+        start_datetime: finalStart,
+        end_datetime: finalEnd
       }).eq('id', idea.id);
 
       if (error) throw error;
@@ -175,6 +186,23 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
         </div>
 
         <div className="p-6 space-y-8 flex-1">
+
+          {/* NEW: MANUAL SCHEDULE ADJUSTER */}
+          <div className="space-y-4">
+            <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Clock className="h-4 w-4" /> Schedule
+            </h3>
+            <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-xl border">
+              <div className="space-y-2">
+                <Label className="text-xs">Start Time</Label>
+                <Input type="datetime-local" value={startDatetime} onChange={e => setStartDatetime(e.target.value)} className="bg-background" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">End Time</Label>
+                <Input type="datetime-local" value={endDatetime} onChange={e => setEndDatetime(e.target.value)} className="bg-background" />
+              </div>
+            </div>
+          </div>
           
           {/* BUDGET */}
           <div className="space-y-4">
@@ -222,7 +250,7 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
             </div>
           </div>
 
-          {/* LOCATION WITH EXPOSED LOGS/COORDINATES */}
+          {/* LOCATION */}
           <div className="space-y-4">
              <div className="flex justify-between items-center">
                <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -232,7 +260,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
              
             <div className="space-y-6">
               
-              {/* ORIGIN BLOCK */}
               <div className="p-4 border rounded-xl bg-card space-y-3">
                 <div className="space-y-1">
                   <Label className="text-xs">{category === 'Transportation' ? 'Origin Address' : 'Address'}</Label>
@@ -247,7 +274,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
                 </div>
               </div>
 
-              {/* DESTINATION BLOCK (TRANSPORTATION ONLY) */}
               {category === 'Transportation' && (
                 <div className="p-4 border rounded-xl bg-card space-y-3">
                   <div className="space-y-1">
@@ -264,7 +290,6 @@ export default function IdeaCardModal({ idea, isOpen, onClose, onUpdate, memberC
                 </div>
               )}
 
-              {/* GOOGLE MAP PREVIEW */}
               <div className="w-full h-48 bg-muted rounded-xl border overflow-hidden relative">
                 {address ? (
                   <iframe 
