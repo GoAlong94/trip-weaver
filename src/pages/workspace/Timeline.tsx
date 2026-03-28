@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { GripVertical, X, Loader2, Plus, Eye, EyeOff, Users } from 'lucide-react';
-import { format, parseISO, differenceInMinutes, addMinutes, startOfHour, subHours, addHours, eachHourOfInterval } from 'date-fns';
+import { format, parseISO, differenceInMinutes, differenceInHours, addMinutes, startOfHour, subHours, addHours, eachHourOfInterval } from 'date-fns';
 import { toast } from 'sonner';
 import IdeaCardModal from '@/components/IdeaCardModal';
 
@@ -25,19 +25,18 @@ const VERSIONS = [
 
 const CATEGORIES = ['Locations', 'Transportation', 'Lodging', 'Food', 'Excursions', 'Entertainment', 'Other'];
 
-// Category Color Mapping for a beautiful, modern UI
+// Modern "Liquid Glass" Color Palette
 const CATEGORY_COLORS: Record<string, string> = {
-  'Locations': 'bg-blue-500/20 border-blue-500/40 text-blue-900 dark:text-blue-100',
-  'Transportation': 'bg-purple-500/20 border-purple-500/40 text-purple-900 dark:text-purple-100',
-  'Lodging': 'bg-amber-500/20 border-amber-500/40 text-amber-900 dark:text-amber-100',
-  'Food': 'bg-orange-500/20 border-orange-500/40 text-orange-900 dark:text-orange-100',
-  'Excursions': 'bg-emerald-500/20 border-emerald-500/40 text-emerald-900 dark:text-emerald-100',
-  'Entertainment': 'bg-pink-500/20 border-pink-500/40 text-pink-900 dark:text-pink-100',
-  'Other': 'bg-slate-500/20 border-slate-500/40 text-slate-900 dark:text-slate-100'
+  'Locations': 'bg-blue-500/20 border-blue-400/50 text-blue-950 dark:text-blue-50 hover:bg-blue-400/30',
+  'Transportation': 'bg-purple-500/20 border-purple-400/50 text-purple-950 dark:text-purple-50 hover:bg-purple-400/30',
+  'Lodging': 'bg-amber-500/20 border-amber-400/50 text-amber-950 dark:text-amber-50 hover:bg-amber-400/30',
+  'Food': 'bg-orange-500/20 border-orange-400/50 text-orange-950 dark:text-orange-50 hover:bg-orange-400/30',
+  'Excursions': 'bg-emerald-500/20 border-emerald-400/50 text-emerald-950 dark:text-emerald-50 hover:bg-emerald-400/30',
+  'Entertainment': 'bg-pink-500/20 border-pink-400/50 text-pink-950 dark:text-pink-50 hover:bg-pink-400/30',
+  'Other': 'bg-slate-500/20 border-slate-400/50 text-slate-950 dark:text-slate-50 hover:bg-slate-400/30'
 };
 
-const PIXELS_PER_HOUR = 180; 
-const PIXELS_PER_MINUTE = PIXELS_PER_HOUR / 60;
+const MIN_CARD_WIDTH = 150; // The "Pill" protection boundary (in pixels)
 
 export default function Timeline() {
   const { tripId } = useParams();
@@ -49,7 +48,6 @@ export default function Timeline() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('idea');
   
-  // Propose Idea Form State
   const [showForm, setShowForm] = useState(false);
   const [members, setMembers] = useState<any[]>([]);
   const [membersCount, setMembersCount] = useState(1);
@@ -59,15 +57,13 @@ export default function Timeline() {
   const [visibility, setVisibility] = useState('public');
   const [sharedWith, setSharedWith] = useState<string[]>([]);
 
-  // Modal State
   const [selectedIdea, setSelectedIdea] = useState<any | null>(null);
   
-  // Dynamic Bounds State
   const [baseStart, setBaseStart] = useState<Date | null>(null);
   const [timelineHours, setTimelineHours] = useState<Date[]>([]);
+  const [pixelsPerHour, setPixelsPerHour] = useState(180); // Dynamic Zoom Level
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  // Smooth Interaction State
   const [interaction, setInteraction] = useState<{ type: 'move' | 'resize-left' | 'resize-right'; id: string; startX: number; originalStart: Date; originalEnd: Date; } | null>(null);
   const isDraggingRef = useRef(false);
 
@@ -99,7 +95,7 @@ export default function Timeline() {
     }
   };
 
-  // STRICT DYNAMIC BOUNDS CALCULATION
+  // DYNAMIC BOUNDS & AUTO-ZOOM CALCULATION
   useEffect(() => {
     if (trip && !loading && !interaction) {
       const scheduled = ideas.filter(i => (i.draft_version || 'idea') === activeTab && i.start_datetime && i.end_datetime);
@@ -115,14 +111,24 @@ export default function Timeline() {
          latest = earliest + 86400000;
       }
 
-      // Exact padding: 2 hours before the first item, 3 hours after the last
       const tStart = startOfHour(subHours(new Date(earliest), 2));
       const tEnd = startOfHour(addHours(new Date(latest), 3));
+
+      // Calculate the "Fit to Screen" Zoom Level
+      if (timelineRef.current) {
+        const totalHours = differenceInHours(tEnd, tStart);
+        const containerWidth = timelineRef.current.clientWidth;
+        // Try to fit the timeline in the screen, but never squish smaller than 120px per hour
+        const optimalZoom = Math.max(120, containerWidth / (totalHours || 1));
+        setPixelsPerHour(optimalZoom);
+      }
 
       setBaseStart(tStart);
       setTimelineHours(eachHourOfInterval({ start: tStart, end: tEnd }));
     }
   }, [trip, ideas, loading, activeTab, interaction]);
+
+  const pixelsPerMinute = pixelsPerHour / 60;
 
   const handleAddIdea = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,9 +153,7 @@ export default function Timeline() {
     }
   };
 
-  const toggleSubGroupMember = (memberId: string) => {
-      setSharedWith(prev => prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]);
-  };
+  const toggleSubGroupMember = (memberId: string) => setSharedWith(prev => prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]);
 
   const handleDragStartPool = (e: React.DragEvent, id: string) => e.dataTransfer.setData("ideaId", id);
 
@@ -162,7 +166,7 @@ export default function Timeline() {
     const scrollLeft = timelineRef.current.scrollLeft;
     const xPos = e.clientX - rect.left + scrollLeft;
     
-    const dropMinutes = Math.floor(xPos / PIXELS_PER_MINUTE);
+    const dropMinutes = Math.floor(xPos / pixelsPerMinute);
     const newStart = addMinutes(baseStart, dropMinutes);
     const idea = ideas.find(i => i.id === id);
     const durationMins = idea?.category === 'Locations' ? (24 * 60) : 120;
@@ -188,7 +192,7 @@ export default function Timeline() {
     isDraggingRef.current = true;
     
     const deltaX = e.pageX - interaction.startX;
-    const deltaMins = Math.round(deltaX / PIXELS_PER_MINUTE / 15) * 15; 
+    const deltaMins = Math.round(deltaX / pixelsPerMinute / 15) * 15; 
 
     setIdeas(prev => prev.map(idea => {
       if (idea.id !== interaction.id) return idea;
@@ -207,7 +211,7 @@ export default function Timeline() {
       }
       return { ...idea, start_datetime: newStart.toISOString(), end_datetime: newEnd.toISOString() };
     }));
-  }, [interaction]);
+  }, [interaction, pixelsPerMinute]);
 
   const handlePointerUp = useCallback(async () => {
     if (!interaction) return;
@@ -240,19 +244,28 @@ export default function Timeline() {
   const unscheduledIdeas = currentDraftIdeas.filter(i => !i.start_datetime);
   const scheduledIdeas = currentDraftIdeas.filter(i => i.start_datetime && i.end_datetime);
 
-  const getLeftPos = (dateStr: string) => differenceInMinutes(parseISO(dateStr), baseStart) * PIXELS_PER_MINUTE;
-  const getWidth = (startStr: string, endStr: string) => differenceInMinutes(parseISO(endStr), parseISO(startStr)) * PIXELS_PER_MINUTE;
-
+  // PIXEL-BASED PACKING (The Magic "Liquid Glass" Collision Engine)
   const packLane = (items: any[]) => {
     const sorted = [...items].sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
-    const rows: number[] = [];
+    const rows: number[] = []; 
+    
     return sorted.map(item => {
-      const start = new Date(item.start_datetime).getTime();
-      const end = new Date(item.end_datetime).getTime();
+      const startMins = differenceInMinutes(parseISO(item.start_datetime), baseStart);
+      const durationMins = differenceInMinutes(parseISO(item.end_datetime), parseISO(item.start_datetime));
+      
+      const startPx = startMins * pixelsPerMinute;
+      const rawWidthPx = durationMins * pixelsPerMinute;
+      const actualWidthPx = Math.max(MIN_CARD_WIDTH, rawWidthPx); // Enforce Liquid Pill Boundary
+      const endPx = startPx + actualWidthPx;
+
       let rowIndex = 0;
-      while (rows[rowIndex] && rows[rowIndex] > start) rowIndex++;
-      rows[rowIndex] = end;
-      return { ...item, rowIndex };
+      // If the visual boundary overlaps with an existing card in this row, bump it down!
+      while (rows[rowIndex] !== undefined && rows[rowIndex] > startPx - 10) {
+        rowIndex++;
+      }
+      rows[rowIndex] = endPx;
+      
+      return { ...item, rowIndex, startPx, actualWidthPx };
     });
   };
 
@@ -307,20 +320,6 @@ export default function Timeline() {
                 <Input type="number" min="0" value={unitCost} onChange={(e) => setUnitCost(Number(e.target.value))} required />
               </div>
               <Button type="submit" className="w-full h-10 lg:mt-6">Add to Pool</Button>
-              
-              {visibility === 'subgroup' && members.length > 0 && (
-                  <div className="lg:col-span-6 bg-background p-4 rounded-md border mt-2">
-                      <Label className="mb-3 block">Who is invited?</Label>
-                      <div className="flex flex-wrap gap-4">
-                          {members.map(m => (
-                              <div key={m.user_id} className="flex items-center space-x-2">
-                                  <Checkbox id={`member-${m.user_id}`} checked={sharedWith.includes(m.user_id)} onCheckedChange={() => toggleSubGroupMember(m.user_id)}/>
-                                  <label htmlFor={`member-${m.user_id}`} className="text-sm font-medium leading-none">{m.profiles?.name || 'Unknown'}</label>
-                              </div>
-                          ))}
-                      </div>
-                  </div>
-              )}
             </form>
           </CardContent>
         </Card>
@@ -328,7 +327,6 @@ export default function Timeline() {
 
       <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
         
-        {/* SMART UNSCHEDULED BUCKET (Disappears completely when empty!) */}
         {unscheduledIdeas.length > 0 && (
           <div className="w-64 flex flex-col bg-muted/30 rounded-xl border shrink-0 overflow-hidden shadow-inner">
             <div className="p-3 border-b bg-muted/50 font-semibold text-sm uppercase flex items-center justify-between">
@@ -361,26 +359,26 @@ export default function Timeline() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDropOnTimeline}
         >
-          <div style={{ width: timelineHours.length * PIXELS_PER_HOUR, minHeight: '100%' }} className="relative flex flex-col">
+          <div style={{ width: timelineHours.length * pixelsPerHour, minHeight: '100%' }} className="relative flex flex-col">
             
-            {/* BIGGER HEADER WITH DAYS */}
-            <div className="sticky top-0 z-40 flex bg-card/80 backdrop-blur-md border-b h-16 shadow-sm">
+            {/* STICKY GLASS HEADER */}
+            <div className="sticky top-0 z-40 flex bg-card/70 backdrop-blur-xl border-b h-16 shadow-sm">
               {timelineHours.map((hour, hIdx) => (
-                <div key={hIdx} style={{ width: PIXELS_PER_HOUR }} className="shrink-0 border-r border-border/40 p-2 flex flex-col items-center justify-center bg-muted/5">
+                <div key={hIdx} style={{ width: pixelsPerHour }} className="shrink-0 border-r border-border/40 p-2 flex flex-col items-center justify-center">
                   <span className="text-base font-bold text-foreground leading-tight">{format(hour, 'h:mm a')}</span>
                   <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-widest">{format(hour, 'EEE, MMM d')}</span>
                 </div>
               ))}
             </div>
 
-            {/* BACKGROUND GRID LINES */}
+            {/* BACKGROUND GRID */}
             <div className="absolute inset-0 top-[64px] flex pointer-events-none z-0">
               {timelineHours.map((_, i) => (
-                <div key={i} style={{ width: PIXELS_PER_HOUR }} className="shrink-0 border-r border-border/20 h-full" />
+                <div key={i} style={{ width: pixelsPerHour }} className="shrink-0 border-r border-border/20 h-full bg-muted/5" />
               ))}
             </div>
 
-            {/* CATEGORY LANES */}
+            {/* LIQUID GLASS CATEGORY LANES */}
             <div className="relative z-10 flex-1 flex flex-col pt-6 pb-12">
               {CATEGORIES.map(category => {
                 const laneItems = packLane(scheduledIdeas.filter(i => i.category === category));
@@ -392,43 +390,38 @@ export default function Timeline() {
                 return (
                   <div key={category} style={{ minHeight: laneHeight }} className="relative w-full group mb-4">
                     
-                    {/* Floating Category Label */}
                     <div className="sticky left-4 inline-block px-3 py-1 bg-background/90 backdrop-blur-sm rounded-md border text-xs font-bold text-muted-foreground uppercase z-30 shadow-sm mb-2">
                       {category}
                     </div>
 
                     {laneItems.map(idea => {
-                      const left = getLeftPos(idea.start_datetime);
-                      const width = Math.max(20, getWidth(idea.start_datetime, idea.end_datetime));
                       const top = 40 + (idea.rowIndex * 60);
-                      
                       const catStyle = CATEGORY_COLORS[idea.category] || CATEGORY_COLORS['Other'];
 
                       return (
                         <div 
                           key={idea.id}
-                          style={{ left, width, top, position: 'absolute' }}
-                          className={`h-12 rounded-lg border ${catStyle} hover:shadow-lg transition-all group/card flex ${interaction?.id === idea.id ? 'z-50 ring-2 ring-primary scale-[1.02]' : 'z-20'}`}
+                          style={{ left: idea.startPx, width: idea.actualWidthPx, top, position: 'absolute' }}
+                          className={`h-12 rounded-xl border backdrop-blur-sm shadow-sm transition-all group/card flex 
+                            ${catStyle} 
+                            ${interaction?.id === idea.id ? 'z-50 ring-2 ring-primary scale-[1.02] shadow-xl' : 'z-20'}`}
                         >
                           <div 
-                            className="w-3 shrink-0 cursor-ew-resize flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 rounded-l-lg z-20"
+                            className="w-3 shrink-0 cursor-ew-resize flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 rounded-l-xl z-20"
                             onMouseDown={(e) => handlePointerDown(e, 'resize-left', idea)}
                           >
                             <div className="w-1 h-4 bg-foreground/20 rounded-full" />
                           </div>
 
-                          {/* THE MAGIC FIX FOR STICKY TEXT & OVERFLOW:
-                            - Text is 'sticky' so it follows your scroll on long items.
-                            - Background prevents clipping so short 30min labels can visually overflow.
-                          */}
                           <div 
-                            className="flex-1 relative h-full flex items-center cursor-grab active:cursor-grabbing z-10"
+                            className="flex-1 relative h-full flex items-center cursor-grab active:cursor-grabbing z-10 overflow-hidden px-2"
                             onMouseDown={(e) => handlePointerDown(e, 'move', idea)}
                             onClick={() => { if (!isDraggingRef.current) setSelectedIdea(idea); }}
                           >
-                              <div className="sticky left-2 whitespace-nowrap px-3 z-30 flex flex-col justify-center drop-shadow-sm pointer-events-none">
-                                <div className="text-sm font-bold leading-tight">{idea.title}</div>
-                                <div className="text-[10px] font-semibold opacity-80">
+                              {/* LIQUID TEXT CONTAINER */}
+                              <div className="flex flex-col justify-center truncate w-full">
+                                <div className="text-sm font-bold truncate tracking-tight">{idea.title}</div>
+                                <div className="text-[10px] font-semibold opacity-80 truncate">
                                   {format(parseISO(idea.start_datetime), 'h:mm a')} - {format(parseISO(idea.end_datetime), 'h:mm a')}
                                 </div>
                               </div>
@@ -442,7 +435,7 @@ export default function Timeline() {
                           </button>
 
                           <div 
-                            className="w-3 shrink-0 cursor-ew-resize flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 rounded-r-lg z-20"
+                            className="w-3 shrink-0 cursor-ew-resize flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 rounded-r-xl z-20"
                             onMouseDown={(e) => handlePointerDown(e, 'resize-right', idea)}
                           >
                             <div className="w-1 h-4 bg-foreground/20 rounded-full" />
@@ -459,11 +452,8 @@ export default function Timeline() {
       </div>
 
       <IdeaCardModal 
-        idea={selectedIdea} 
-        isOpen={!!selectedIdea} 
-        onClose={() => setSelectedIdea(null)} 
-        onUpdate={fetchTimeline}
-        memberCount={membersCount}
+        idea={selectedIdea} isOpen={!!selectedIdea} 
+        onClose={() => setSelectedIdea(null)} onUpdate={fetchTimeline} memberCount={membersCount}
       />
     </div>
   );
