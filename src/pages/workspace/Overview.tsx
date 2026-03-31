@@ -157,6 +157,63 @@ export default function Overview() {
     }
   };
 
+  // --- SURGICAL EXTRACTION FUNCTION ---
+  const handleRemoveMember = async (memberIdToRemove: string, memberName: string) => {
+    if (!window.confirm(`Are you sure you want to remove ${memberName}? Their upvotes and expense splits will be cleared.`)) return;
+    
+    try {
+      // 1. Scrub from Idea Cards (Upvotes & Subgroups)
+      const { data: cards } = await supabase.from('idea_cards').select('id, upvotes, shared_with').eq('trip_id', tripId);
+      
+      if (cards) {
+        for (const card of cards) {
+          let needsUpdate = false;
+          let newUpvotes = Array.isArray(card.upvotes) ? [...card.upvotes] : [];
+          let newSharedWith = Array.isArray(card.shared_with) ? [...card.shared_with] : [];
+
+          if (newUpvotes.includes(memberIdToRemove)) {
+             newUpvotes = newUpvotes.filter(id => id !== memberIdToRemove);
+             needsUpdate = true;
+          }
+          if (newSharedWith.includes(memberIdToRemove)) {
+             newSharedWith = newSharedWith.filter(id => id !== memberIdToRemove);
+             needsUpdate = true;
+          }
+          if (needsUpdate) {
+             await supabase.from('idea_cards').update({ upvotes: newUpvotes, shared_with: newSharedWith }).eq('id', card.id);
+          }
+        }
+      }
+
+      // 2. Scrub from Ledger Expenses (Splits)
+      const { data: expenses } = await supabase.from('expenses').select('id, split_among').eq('trip_id', tripId);
+      
+      if (expenses) {
+        for (const exp of expenses) {
+          let newSplits = Array.isArray(exp.split_among) ? [...exp.split_among] : [];
+          if (newSplits.includes(memberIdToRemove)) {
+            newSplits = newSplits.filter(id => id !== memberIdToRemove);
+            await supabase.from('expenses').update({ split_among: newSplits }).eq('id', exp.id);
+          }
+        }
+      }
+
+      // 3. Remove from Trip Members Table
+      const { error: deleteError } = await supabase
+        .from('trip_members')
+        .delete()
+        .eq('trip_id', tripId)
+        .eq('user_id', memberIdToRemove);
+
+      if (deleteError) throw deleteError;
+
+      toast.success(`${memberName} removed from the trip.`);
+      fetchMembers(); // Refresh UI
+    } catch (error: any) {
+      toast.error(error.message || "Failed to remove member");
+    }
+  };
+
   if (!trip) return null;
 
   const safeParseDate = (dateStr: string | null) => {
@@ -318,6 +375,18 @@ export default function Overview() {
                     <p className="text-xs text-muted-foreground">{member.role}</p>
                   </div>
                 </div>
+                
+                {/* SURGICAL EXTRACTION BUTTON */}
+                {isHost && member.user_id !== user?.id && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-destructive transition-colors"
+                    onClick={() => handleRemoveMember(member.user_id, member.profiles?.name || 'Unknown User')}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
