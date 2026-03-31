@@ -35,22 +35,40 @@ export default function LedgerView() {
 
   const fetchData = async () => {
     try {
-      // Fetch Members FIRST
+      // 1. Fetch Member IDs
       const { data: memberData, error: memberError } = await supabase
         .from('trip_members')
-        .select('user_id, profiles(name)')
+        .select('user_id')
         .eq('trip_id', tripId);
       
       if (memberError) throw memberError;
 
-      if (memberData) {
-        setMembers(memberData);
-        // Default the form selections: everyone is checked, and current user is the payer
-        setSplitAmong(memberData.map(m => m.user_id)); 
+      // 2. Safely Fetch Profiles (The Two-Step Fetch)
+      if (memberData && memberData.length > 0) {
+        const userIds = memberData.map(m => m.user_id);
+        
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, name')
+          .in('id', userIds);
+
+        const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+        
+        const enrichedMembers = memberData.map(m => ({
+          user_id: m.user_id,
+          profiles: profileMap.get(m.user_id) || null
+        }));
+
+        setMembers(enrichedMembers);
+        
+        // Default the form selections
+        setSplitAmong(userIds); 
         if (user) setPaidBy(user.id); 
+      } else {
+        setMembers([]);
       }
 
-      // Fetch Expenses (Removed the crashing Join!)
+      // 3. Fetch Expenses
       const { data: expData, error: expError } = await supabase
         .from('expenses')
         .select('*')
@@ -111,7 +129,7 @@ export default function LedgerView() {
   // Helper to safely get names locally
   const getMemberName = (id: string) => {
     const m = members.find(m => m.user_id === id);
-    return m?.profiles?.name || 'Unknown';
+    return m?.profiles?.name || 'Unknown User';
   };
 
   // --- THE SPLITWISE MATH ENGINE ---
@@ -297,7 +315,7 @@ export default function LedgerView() {
               ))
             )}
           </div>
-        </TabsContent>
+        </Tabs/TabsContent>
 
         <TabsContent value="balances">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -315,7 +333,7 @@ export default function LedgerView() {
                       <div className="font-medium">{getMemberName(uid)}</div>
                       <div className={`flex items-center gap-2 font-mono font-bold ${isPositive ? 'text-emerald-500' : isNegative ? 'text-destructive' : 'text-muted-foreground'}`}>
                         {isPositive ? <TrendingUp className="h-4 w-4" /> : isNegative ? <TrendingDown className="h-4 w-4" /> : null}
-                        {isSettled ? 'Settled Up' : `${balance > 0 ? '+' : ''}₹${balance.toFixed(2)}`}
+                        {isSettled ? 'Settled Up' : `${balance > 0 ? '+' : ''}₹${Math.abs(balance).toFixed(2)}`}
                       </div>
                     </div>
                   );
