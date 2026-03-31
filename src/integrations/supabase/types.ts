@@ -99,6 +99,9 @@ export type Database = {
           currency: string | null
           draft_version: string | null
           end_datetime: string | null
+          end_location_address: string | null
+          end_location_lat: number | null
+          end_location_lng: number | null
           end_time: string | null
           google_place_id: string | null
           id: string
@@ -128,6 +131,9 @@ export type Database = {
           currency?: string | null
           draft_version?: string | null
           end_datetime?: string | null
+          end_location_address?: string | null
+          end_location_lat?: number | null
+          end_location_lng?: number | null
           end_time?: string | null
           google_place_id?: string | null
           id?: string
@@ -157,6 +163,9 @@ export type Database = {
           currency?: string | null
           draft_version?: string | null
           end_datetime?: string | null
+          end_location_address?: string | null
+          end_location_lat?: number | null
+          end_location_lng?: number | null
           end_time?: string | null
           google_place_id?: string | null
           id?: string
