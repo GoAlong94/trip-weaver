@@ -17,6 +17,7 @@ import DateVoting from "./pages/workspace/DateVoting";
 import PlaceholderTab from "./pages/workspace/PlaceholderTab";
 import MapView from "./pages/workspace/MapView";
 import BudgetView from "./pages/workspace/BudgetView";
+import LedgerView from "./pages/workspace/LedgerView";
 import JoinTrip from "./pages/JoinTrip";
 import NotFound from "./pages/NotFound";
 
@@ -46,7 +47,7 @@ const App = () => (
                 <Route path="timeline" element={<Timeline />} />
                 <Route path="map" element={<MapView />} />
                 <Route path="budget" element={<BudgetView />} />
-                <Route path="ledger" element={<PlaceholderTab />} />
+                <Route path="ledger" element={<LedgerView />} />
               </Route>
               <Route path="/join/:tripId" element={<JoinTrip />} />
               <Route path="*" element={<NotFound />} />
