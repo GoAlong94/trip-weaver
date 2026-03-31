@@ -185,18 +185,8 @@ export default function Overview() {
         }
       }
 
-      // 2. Scrub from Ledger Expenses (Splits)
-      const { data: expenses } = await supabase.from('expenses').select('id, split_among').eq('trip_id', tripId);
-      
-      if (expenses) {
-        for (const exp of expenses) {
-          let newSplits = Array.isArray(exp.split_among) ? [...exp.split_among] : [];
-          if (newSplits.includes(memberIdToRemove)) {
-            newSplits = newSplits.filter(id => id !== memberIdToRemove);
-            await supabase.from('expenses').update({ split_among: newSplits }).eq('id', exp.id);
-          }
-        }
-      }
+      // 2. Remove from Ledger Expense Splits
+      await supabase.from('expense_splits').delete().eq('user_id', memberIdToRemove);
 
       // 3. Remove from Trip Members Table
       const { error: deleteError } = await supabase

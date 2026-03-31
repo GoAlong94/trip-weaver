@@ -315,7 +315,7 @@ export default function LedgerView() {
               ))
             )}
           </div>
-        </Tabs/TabsContent>
+        </TabsContent>
 
         <TabsContent value="balances">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

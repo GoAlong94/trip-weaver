@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { LayoutDashboard, Lightbulb, Clock, TrendingUp, Receipt, ArrowLeft, CalendarDays, MapIcon, PieChart, Receipt } from 'lucide-react';
+import { LayoutDashboard, Lightbulb, Clock, TrendingUp, ArrowLeft, CalendarDays, MapIcon, PieChart, Receipt } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
   Sidebar,
