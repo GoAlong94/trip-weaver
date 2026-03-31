@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
-import { Loader2, Receipt, ArrowRightLeft, Plus, Wallet, TrendingDown, TrendingUp } from 'lucide-react';
+import { Loader2, Receipt, ArrowRightLeft, Plus, Wallet, TrendingDown, TrendingUp, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,33 +31,38 @@ export default function LedgerView() {
 
   useEffect(() => {
     fetchData();
-  }, [tripId]);
+  }, [tripId, user]);
 
   const fetchData = async () => {
     try {
-      // Fetch Members
-      const { data: memberData } = await supabase
+      // Fetch Members FIRST
+      const { data: memberData, error: memberError } = await supabase
         .from('trip_members')
         .select('user_id, profiles(name)')
         .eq('trip_id', tripId);
       
+      if (memberError) throw memberError;
+
       if (memberData) {
         setMembers(memberData);
-        setSplitAmong(memberData.map(m => m.user_id)); // Default split among everyone
-        if (user) setPaidBy(user.id); // Default paid by current user
+        // Default the form selections: everyone is checked, and current user is the payer
+        setSplitAmong(memberData.map(m => m.user_id)); 
+        if (user) setPaidBy(user.id); 
       }
 
-      // Fetch Expenses
-      const { data: expData, error } = await supabase
+      // Fetch Expenses (Removed the crashing Join!)
+      const { data: expData, error: expError } = await supabase
         .from('expenses')
-        .select('*, payer:profiles!expenses_paid_by_fkey(name)')
+        .select('*')
         .eq('trip_id', tripId)
         .order('created_at', { ascending: false });
         
-      if (error) throw error;
+      if (expError) throw expError;
       setExpenses(expData || []);
-    } catch (error) {
-      toast.error("Failed to load ledger data");
+      
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Failed to load ledger data");
     } finally {
       setLoading(false);
     }
@@ -83,7 +88,7 @@ export default function LedgerView() {
       toast.success("Expense added successfully!");
       setShowForm(false);
       setTitle(''); setAmount('');
-      fetchData(); // Refresh to get the joins
+      fetchData(); // Refresh the list
     } catch (error: any) {
       toast.error(error.message);
     }
@@ -103,6 +108,7 @@ export default function LedgerView() {
     }
   };
 
+  // Helper to safely get names locally
   const getMemberName = (id: string) => {
     const m = members.find(m => m.user_id === id);
     return m?.profiles?.name || 'Unknown';
@@ -142,19 +148,14 @@ export default function LedgerView() {
     creditors.sort((a, b) => b.amount - a.amount);
 
     const settlements = [];
-    let i = 0; // debtors index
-    let j = 0; // creditors index
+    let i = 0; let j = 0;
 
     while (i < debtors.length && j < creditors.length) {
       const debtor = debtors[i];
       const creditor = creditors[j];
       const amount = Math.min(debtor.amount, creditor.amount);
 
-      settlements.push({
-        from: debtor.id,
-        to: creditor.id,
-        amount: amount
-      });
+      settlements.push({ from: debtor.id, to: creditor.id, amount: amount });
 
       debtor.amount -= amount;
       creditor.amount -= amount;
@@ -216,7 +217,7 @@ export default function LedgerView() {
                 <Select value={paidBy} onValueChange={setPaidBy}>
                   <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {members.map(m => <SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.name}</SelectItem>)}
+                    {members.map(m => <SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.name || 'Unknown'}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -232,7 +233,7 @@ export default function LedgerView() {
                         onCheckedChange={() => toggleSplitMember(m.user_id)}
                       />
                       <label htmlFor={`split-${m.user_id}`} className="text-sm font-medium leading-none cursor-pointer">
-                        {m.profiles?.name}
+                        {m.profiles?.name || 'Unknown'}
                       </label>
                     </div>
                   ))}
@@ -281,7 +282,7 @@ export default function LedgerView() {
                     <div>
                       <h4 className="font-semibold">{exp.title}</h4>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Paid by <span className="font-medium text-foreground">{exp.payer?.name || 'Unknown'}</span> 
+                        Paid by <span className="font-medium text-foreground">{getMemberName(exp.paid_by)}</span> 
                         {' • '} {format(new Date(exp.created_at), 'MMM d, h:mm a')}
                       </p>
                     </div>
@@ -300,12 +301,8 @@ export default function LedgerView() {
 
         <TabsContent value="balances">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            
-            {/* INDIVIDUAL BALANCES */}
             <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle>Net Balances</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>Net Balances</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 {Object.keys(balances).map(uid => {
                   const balance = balances[uid];
@@ -326,18 +323,11 @@ export default function LedgerView() {
               </CardContent>
             </Card>
 
-            {/* HOW TO SETTLE UP */}
             <Card className="shadow-sm border-primary/20 bg-primary/5">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ArrowRightLeft className="h-5 w-5 text-primary" /> How to Settle Up
-                </CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2"><ArrowRightLeft className="h-5 w-5 text-primary" /> How to Settle Up</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 {settlements.length === 0 ? (
-                  <div className="text-center p-6 text-muted-foreground">
-                    Everyone is completely settled up! 🍻
-                  </div>
+                  <div className="text-center p-6 text-muted-foreground">Everyone is completely settled up! 🍻</div>
                 ) : (
                   settlements.map((s, idx) => (
                     <div key={idx} className="flex items-center justify-between p-4 bg-background border rounded-xl shadow-sm">
@@ -346,15 +336,12 @@ export default function LedgerView() {
                         <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
                         <span className="font-semibold">{getMemberName(s.to)}</span>
                       </div>
-                      <div className="font-mono font-bold text-lg text-primary">
-                        ₹{s.amount.toFixed(2)}
-                      </div>
+                      <div className="font-mono font-bold text-lg text-primary">₹{s.amount.toFixed(2)}</div>
                     </div>
                   ))
                 )}
               </CardContent>
             </Card>
-
           </div>
         </TabsContent>
       </Tabs>
