@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 // Global memory cache. This survives when you switch tabs!
 const globalCache: Record<string, any> = {};
+let isFetching = false; // Prevents colliding fetch requests
 
 export function useTripData(tripId: string | undefined) {
   const [members, setMembers] = useState<any[]>(globalCache[`${tripId}_members`] || []);
@@ -13,16 +14,16 @@ export function useTripData(tripId: string | undefined) {
   const [loading, setLoading] = useState(!globalCache[`${tripId}_members`]);
 
   const refreshData = useCallback(async () => {
-    if (!tripId) return;
+    if (!tripId || isFetching) return;
+    isFetching = true;
+    
     try {
-      // Fetch everything simultaneously for maximum speed
       const [membersRes, ideasRes, expensesRes] = await Promise.all([
         supabase.from('trip_members').select('user_id, role').eq('trip_id', tripId),
         supabase.from('idea_cards').select('*').eq('trip_id', tripId),
         supabase.from('expenses').select('*').eq('trip_id', tripId).order('created_at', { ascending: false })
       ]);
 
-      // The Two-Step Fetch to safely get profile names
       let enrichedMembers = [];
       if (membersRes.data && membersRes.data.length > 0) {
         const userIds = membersRes.data.map((m: any) => m.user_id);
@@ -35,12 +36,10 @@ export function useTripData(tripId: string | undefined) {
         }));
       }
 
-      // 1. Update the Global Cache
       globalCache[`${tripId}_members`] = enrichedMembers;
       globalCache[`${tripId}_ideas`] = ideasRes.data || [];
       globalCache[`${tripId}_expenses`] = expensesRes.data || [];
 
-      // 2. Update the Local Tab State
       setMembers(enrichedMembers);
       setIdeas(ideasRes.data || []);
       setExpenses(expensesRes.data || []);
@@ -48,12 +47,13 @@ export function useTripData(tripId: string | undefined) {
       console.error("Failed to fetch trip data", error);
     } finally {
       setLoading(false);
+      isFetching = false;
     }
   }, [tripId]);
 
   useEffect(() => {
     refreshData();
-  }, [tripId, refreshData]);
+  }, [refreshData]);
 
   return { members, ideas, expenses, loading, refreshData };
 }
