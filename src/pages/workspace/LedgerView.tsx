@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { useTripData } from '@/hooks/useTripData';
+import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Receipt, ArrowRightLeft, Plus, Wallet, TrendingDown, TrendingUp, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,9 +18,8 @@ export default function LedgerView() {
   const { tripId } = useParams();
   const { user } = useAuth();
   
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [members, setMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // 🔥 THE MAGIC ENGINE 🔥
+  const { members, expenses, loading, refreshData } = useTripData(tripId);
   
   // Form State
   const [showForm, setShowForm] = useState(false);
@@ -29,66 +29,19 @@ export default function LedgerView() {
   const [paidBy, setPaidBy] = useState<string>('');
   const [splitAmong, setSplitAmong] = useState<string[]>([]);
 
+  // Safely initialize the form defaults ONCE, so they don't wipe out during background refreshes!
   useEffect(() => {
-    fetchData();
-  }, [tripId, user]);
-
-  const fetchData = async () => {
-    try {
-      // 1. Fetch Member IDs
-      const { data: memberData, error: memberError } = await supabase
-        .from('trip_members')
-        .select('user_id')
-        .eq('trip_id', tripId);
-      
-      if (memberError) throw memberError;
-
-      // 2. Safely Fetch Profiles (The Two-Step Fetch)
-      if (memberData && memberData.length > 0) {
-        const userIds = memberData.map(m => m.user_id);
-        
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, name')
-          .in('id', userIds);
-
-        const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-        
-        const enrichedMembers = memberData.map(m => ({
-          user_id: m.user_id,
-          profiles: profileMap.get(m.user_id) || null
-        }));
-
-        setMembers(enrichedMembers);
-        
-        // Default the form selections
-        setSplitAmong(userIds); 
-        if (user) setPaidBy(user.id); 
-      } else {
-        setMembers([]);
-      }
-
-      // 3. Fetch Expenses
-      const { data: expData, error: expError } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('trip_id', tripId)
-        .order('created_at', { ascending: false });
-        
-      if (expError) throw expError;
-      setExpenses(expData || []);
-      
-    } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Failed to load ledger data");
-    } finally {
-      setLoading(false);
+    if (members.length > 0 && splitAmong.length === 0) {
+      setSplitAmong(members.map(m => m.user_id));
+      if (user && !paidBy) setPaidBy(user.id);
     }
-  };
+  }, [members, user]);
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !amount || splitAmong.length === 0) return toast.error("Please fill all fields and select at least one person to split with.");
+    if (!title || !amount || !paidBy || splitAmong.length === 0) {
+      return toast.error("Please fill all fields and select who paid.");
+    }
 
     try {
       const newExp = {
@@ -105,8 +58,10 @@ export default function LedgerView() {
 
       toast.success("Expense added successfully!");
       setShowForm(false);
-      setTitle(''); setAmount('');
-      fetchData(); // Refresh the list
+      setTitle(''); 
+      setAmount('');
+      // Force the global engine to fetch the newest data
+      await refreshData(); 
     } catch (error: any) {
       toast.error(error.message);
     }
@@ -119,20 +74,18 @@ export default function LedgerView() {
   const deleteExpense = async (id: string) => {
     try {
       await supabase.from('expenses').delete().eq('id', id);
-      setExpenses(expenses.filter(e => e.id !== id));
       toast.success("Expense deleted");
+      refreshData();
     } catch (e) {
       toast.error("Failed to delete");
     }
   };
 
-  // Helper to safely get names locally
   const getMemberName = (id: string) => {
     const m = members.find(m => m.user_id === id);
     return m?.profiles?.name || 'Unknown User';
   };
 
-  // --- THE SPLITWISE MATH ENGINE ---
   const calculateBalances = () => {
     const balances: Record<string, number> = {};
     members.forEach(m => balances[m.user_id] = 0);
@@ -141,23 +94,15 @@ export default function LedgerView() {
       const splitCount = exp.split_among?.length || 1;
       const share = exp.amount / splitCount;
 
-      // The person who paid gets the FULL amount added to their positive balance
-      if (balances[exp.paid_by] !== undefined) {
-        balances[exp.paid_by] += exp.amount;
-      }
-
-      // Everyone involved gets their share subtracted from their balance
+      if (balances[exp.paid_by] !== undefined) balances[exp.paid_by] += exp.amount;
       exp.split_among.forEach((uid: string) => {
-        if (balances[uid] !== undefined) {
-          balances[uid] -= share;
-        }
+        if (balances[uid] !== undefined) balances[uid] -= share;
       });
     });
 
     return balances;
   };
 
-  // Generate "Who owes Who" Settlement Plan
   const calculateSettlements = (balances: Record<string, number>) => {
     const debtors = Object.keys(balances).filter(k => balances[k] < -0.01).map(k => ({ id: k, amount: -balances[k] }));
     const creditors = Object.keys(balances).filter(k => balances[k] > 0.01).map(k => ({ id: k, amount: balances[k] }));
@@ -235,7 +180,7 @@ export default function LedgerView() {
                 <Select value={paidBy} onValueChange={setPaidBy}>
                   <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {members.map(m => <SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.name || 'Unknown'}</SelectItem>)}
+                    {members.map(m => <SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.name || 'Unknown User'}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -251,7 +196,7 @@ export default function LedgerView() {
                         onCheckedChange={() => toggleSplitMember(m.user_id)}
                       />
                       <label htmlFor={`split-${m.user_id}`} className="text-sm font-medium leading-none cursor-pointer">
-                        {m.profiles?.name || 'Unknown'}
+                        {m.profiles?.name || 'Unknown User'}
                       </label>
                     </div>
                   ))}
