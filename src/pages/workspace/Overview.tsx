@@ -1,13 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTrips } from '@/context/TripContext';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { useTripData } from '@/hooks/useTripData';
 import { format, parseISO, differenceInDays } from 'date-fns';
-import { Calendar, MapPin, Users, Clock, Settings, Trash2, Link2, Copy, Check, RefreshCw, UserPlus, Mail } from 'lucide-react';
+import { Calendar, MapPin, Users, Clock, Settings, Trash2, Copy, Check, UserPlus, Mail, Download, Wallet, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -35,8 +38,8 @@ export default function Overview() {
   const { getTrip, updateTrip, deleteTrip } = useTrips();
   const trip = getTrip(tripId || '');
 
-  const [members, setMembers] = useState<any[]>([]);
-  const [loadingMembers, setLoadingMembers] = useState(true);
+  // 🔥 THE INSTANT CACHE ENGINE 🔥
+  const { members, expenses, ideas, loading, refreshData } = useTripData(tripId);
 
   // Edit State
   const [isEditing, setIsEditing] = useState(false);
@@ -52,43 +55,10 @@ export default function Overview() {
   const [copied, setCopied] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
-  useEffect(() => {
-    if (tripId) fetchMembers();
-  }, [tripId]);
-
-  const fetchMembers = async () => {
-    try {
-      const { data: memberData, error } = await supabase
-        .from('trip_members')
-        .select('id, role, user_id')
-        .eq('trip_id', tripId);
-      if (error) throw error;
-
-      const userIds = (memberData || []).map(m => m.user_id);
-      if (userIds.length === 0) { setMembers([]); return; }
-
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, name, avatar_url')
-        .in('id', userIds);
-
-      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-      setMembers((memberData || []).map(m => ({
-        ...m,
-        profiles: profileMap.get(m.user_id) || null,
-      })));
-    } catch (error) {
-      console.error('Error fetching members:', error);
-    } finally {
-      setLoadingMembers(false);
-    }
-  };
-
   const handleInviteByEmail = async () => {
     if (!trip || !user || !inviteEmail.trim()) return;
     const email = inviteEmail.trim().toLowerCase();
 
-    // Basic email validation
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       toast.error('Please enter a valid email address');
       return;
@@ -157,48 +127,38 @@ export default function Overview() {
     }
   };
 
-  // --- SURGICAL EXTRACTION FUNCTION ---
   const handleRemoveMember = async (memberIdToRemove: string, memberName: string) => {
     if (!window.confirm(`Are you sure you want to remove ${memberName}? Their upvotes and expense splits will be cleared.`)) return;
-    
     try {
-      // 1. Scrub from Idea Cards (Upvotes & Subgroups)
       const { data: cards } = await supabase.from('idea_cards').select('id, upvotes, shared_with').eq('trip_id', tripId);
-      
       if (cards) {
         for (const card of cards) {
           let needsUpdate = false;
           let newUpvotes = Array.isArray(card.upvotes) ? [...card.upvotes] : [];
           let newSharedWith = Array.isArray(card.shared_with) ? [...card.shared_with] : [];
 
-          if (newUpvotes.includes(memberIdToRemove)) {
-             newUpvotes = newUpvotes.filter(id => id !== memberIdToRemove);
-             needsUpdate = true;
-          }
-          if (newSharedWith.includes(memberIdToRemove)) {
-             newSharedWith = newSharedWith.filter(id => id !== memberIdToRemove);
-             needsUpdate = true;
-          }
-          if (needsUpdate) {
-             await supabase.from('idea_cards').update({ upvotes: newUpvotes, shared_with: newSharedWith }).eq('id', card.id);
+          if (newUpvotes.includes(memberIdToRemove)) { newUpvotes = newUpvotes.filter(id => id !== memberIdToRemove); needsUpdate = true; }
+          if (newSharedWith.includes(memberIdToRemove)) { newSharedWith = newSharedWith.filter(id => id !== memberIdToRemove); needsUpdate = true; }
+          if (needsUpdate) await supabase.from('idea_cards').update({ upvotes: newUpvotes, shared_with: newSharedWith }).eq('id', card.id);
+        }
+      }
+
+      const { data: expensesList } = await supabase.from('expenses').select('id, split_among').eq('trip_id', tripId);
+      if (expensesList) {
+        for (const exp of expensesList) {
+          let newSplits = Array.isArray(exp.split_among) ? [...exp.split_among] : [];
+          if (newSplits.includes(memberIdToRemove)) {
+            newSplits = newSplits.filter(id => id !== memberIdToRemove);
+            await supabase.from('expenses').update({ split_among: newSplits }).eq('id', exp.id);
           }
         }
       }
 
-      // 2. Remove from Ledger Expense Splits
-      await supabase.from('expense_splits').delete().eq('user_id', memberIdToRemove);
-
-      // 3. Remove from Trip Members Table
-      const { error: deleteError } = await supabase
-        .from('trip_members')
-        .delete()
-        .eq('trip_id', tripId)
-        .eq('user_id', memberIdToRemove);
-
+      const { error: deleteError } = await supabase.from('trip_members').delete().eq('trip_id', tripId).eq('user_id', memberIdToRemove);
       if (deleteError) throw deleteError;
 
       toast.success(`${memberName} removed from the trip.`);
-      fetchMembers(); // Refresh UI
+      refreshData(); 
     } catch (error: any) {
       toast.error(error.message || "Failed to remove member");
     }
@@ -216,8 +176,21 @@ export default function Overview() {
   const days = startDate && endDate ? differenceInDays(endDate, startDate) : 0;
   const isHost = trip.created_by === user?.id;
 
+  // BROCHURE MATH
+  const totalActualSpend = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+  const totalPlannedBudget = ideas.reduce((sum, idea) => {
+    if (!idea.unit_cost) return sum;
+    const qty = idea.quantity_type === 'per_person' ? (members.length || 1) : (idea.quantity || 1);
+    return sum + (idea.unit_cost * qty);
+  }, 0);
+  const budgetPercentage = totalPlannedBudget > 0 ? Math.min((totalActualSpend / totalPlannedBudget) * 100, 100) : 0;
+
+  const scheduledIdeas = ideas
+    .filter(i => i.start_datetime)
+    .sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-5xl mx-auto space-y-8 p-2 pb-24">
       {/* HEADER & ACTIONS */}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-display font-bold">Trip Overview</h2>
@@ -225,9 +198,7 @@ export default function Overview() {
           <div className="flex gap-2">
             <Dialog open={isEditing} onOpenChange={setIsEditing}>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Settings className="h-4 w-4" /> Edit Details
-                </Button>
+                <Button variant="outline" size="sm" className="gap-2"><Settings className="h-4 w-4" /> Edit Details</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>Edit Trip</DialogTitle></DialogHeader>
@@ -242,9 +213,7 @@ export default function Overview() {
                 </form>
               </DialogContent>
             </Dialog>
-            <Button variant="destructive" size="sm" onClick={handleDelete} className="gap-2">
-              <Trash2 className="h-4 w-4" /> Delete
-            </Button>
+            <Button variant="destructive" size="sm" onClick={handleDelete} className="gap-2"><Trash2 className="h-4 w-4" /> Delete</Button>
           </div>
         )}
       </div>
@@ -271,115 +240,139 @@ export default function Overview() {
         </div>
       </div>
 
-      {/* MEMBER MANAGEMENT */}
-      <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
-        <div className="p-6 border-b flex justify-between items-center bg-muted/30">
-          <div>
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" /> Travel Party
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">Manage who has access to this trip's planner and ledger.</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* LEFT COLUMN */}
+        <div className="lg:col-span-1 space-y-8">
+          {/* FINANCIAL SUMMARY */}
+          <div className="rounded-2xl border bg-card p-6 shadow-sm">
+            <h3 className="font-semibold flex items-center gap-2 mb-4"><Wallet className="h-5 w-5 text-primary" /> Financial Overview</h3>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-muted-foreground">Actual Spend</span>
+                  <span className="font-bold">₹{totalActualSpend.toLocaleString()}</span>
+                </div>
+                <Progress value={budgetPercentage} className="h-3" indicatorColor={budgetPercentage > 100 ? 'bg-destructive' : 'bg-primary'} />
+                <div className="flex justify-between text-xs mt-2">
+                  <span className="text-muted-foreground">0</span>
+                  <span className="text-muted-foreground">Planned: ₹{totalPlannedBudget.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
           </div>
-          {isHost && (
-            <Dialog open={inviteDialogOpen} onOpenChange={(open) => {
-              setInviteDialogOpen(open);
-              if (!open) resetInviteForm();
-            }}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="gap-2">
-                  <UserPlus className="h-4 w-4" /> Add Member
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Invite a Member</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 pt-2">
-                  <p className="text-sm text-muted-foreground">
-                    Enter your friend's email address. We'll generate a unique invite link you can share with them.
-                  </p>
 
-                  {!inviteLink ? (
-                    <>
-                      <div className="space-y-2">
-                        <Label htmlFor="invite-email">Email Address</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            id="invite-email"
-                            type="email"
-                            placeholder="friend@example.com"
-                            value={inviteEmail}
-                            onChange={e => setInviteEmail(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleInviteByEmail()}
-                          />
-                          <Button
-                            onClick={handleInviteByEmail}
-                            disabled={generatingLink || !inviteEmail.trim()}
-                            className="gap-2 shrink-0"
-                          >
-                            <Mail className="h-4 w-4" />
-                            {generatingLink ? 'Generating...' : 'Generate Link'}
-                          </Button>
+          {/* MEMBER MANAGEMENT */}
+          <div className="rounded-2xl border bg-card overflow-hidden shadow-sm">
+            <div className="p-4 border-b bg-muted/30 flex justify-between items-center">
+              <h3 className="font-semibold flex items-center gap-2">Travel Party</h3>
+              {isHost && (
+                <Dialog open={inviteDialogOpen} onOpenChange={(open) => { setInviteDialogOpen(open); if (!open) resetInviteForm(); }}>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full bg-primary/10 text-primary hover:bg-primary/20"><UserPlus className="h-4 w-4"/></Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader><DialogTitle>Invite a Member</DialogTitle></DialogHeader>
+                    <div className="space-y-4 pt-2">
+                      <p className="text-sm text-muted-foreground">Enter an email to generate a unique invite link.</p>
+                      {!inviteLink ? (
+                        <div className="space-y-2">
+                          <Label>Email Address</Label>
+                          <div className="flex gap-2">
+                            <Input type="email" placeholder="friend@example.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleInviteByEmail()} />
+                            <Button onClick={handleInviteByEmail} disabled={generatingLink || !inviteEmail.trim()} className="gap-2 shrink-0">
+                              <Mail className="h-4 w-4" /> {generatingLink ? '...' : 'Generate'}
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="p-3 rounded-lg bg-muted/50 border">
-                        <p className="text-xs text-muted-foreground mb-1">Share this link with <span className="font-medium text-foreground">{inviteEmail}</span>:</p>
-                        <div className="flex gap-2 mt-2">
-                          <Input
-                            readOnly
-                            value={inviteLink}
-                            className="font-mono text-xs bg-background"
-                          />
-                          <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5 shrink-0">
-                            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                            {copied ? 'Copied' : 'Copy'}
-                          </Button>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="p-3 rounded-lg bg-muted/50 border">
+                            <p className="text-xs text-muted-foreground mb-1">Share this link with <span className="font-medium text-foreground">{inviteEmail}</span>:</p>
+                            <div className="flex gap-2 mt-2">
+                              <Input readOnly value={inviteLink} className="font-mono text-xs bg-background" />
+                              <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5 shrink-0">
+                                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} Copied
+                              </Button>
+                            </div>
+                          </div>
+                          <Button variant="outline" size="sm" onClick={resetInviteForm} className="gap-2"><UserPlus className="h-3.5 w-3.5" /> Invite Another</Button>
                         </div>
-                      </div>
-                      <Button variant="outline" size="sm" onClick={resetInviteForm} className="gap-2">
-                        <UserPlus className="h-3.5 w-3.5" /> Invite Another
-                      </Button>
+                      )}
                     </div>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </div>
+            
+            <div className="p-2 space-y-1 max-h-[300px] overflow-y-auto custom-scrollbar">
+              {loading ? (
+                <p className="text-sm text-muted-foreground p-4">Loading members...</p>
+              ) : members.map((member) => (
+                <div key={member.user_id} className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 group">
+                  <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
+                      {member.profiles?.name?.charAt(0) || 'U'}
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm leading-none">{member.profiles?.name || 'Unknown User'}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase mt-1">{member.role}</p>
+                    </div>
+                  </div>
+                  {isHost && member.user_id !== user?.id && (
+                    <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive" onClick={() => handleRemoveMember(member.user_id, member.profiles?.name)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   )}
                 </div>
-              </DialogContent>
-            </Dialog>
-          )}
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="p-6">
-          <ul className="space-y-3">
-            {loadingMembers ? (
-              <p className="text-sm text-muted-foreground">Loading members...</p>
-            ) : members.map((member) => (
-              <li key={member.id} className="flex items-center justify-between p-3 rounded-lg border bg-background">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
-                    {member.profiles?.name?.charAt(0) || 'U'}
+        {/* RIGHT COLUMN: ITINERARY PREVIEW */}
+        <div className="lg:col-span-2">
+          <div className="rounded-2xl border bg-card p-6 shadow-sm h-full relative overflow-hidden">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold tracking-tight">Timeline Summary</h3>
+              <Button variant="link" className="text-primary gap-1" onClick={() => navigate(`/workspace/${tripId}/timeline`)}>View Full <ArrowRight className="h-4 w-4"/></Button>
+            </div>
+
+            {scheduledIdeas.length === 0 ? (
+              <div className="text-center p-12 border border-dashed rounded-xl text-muted-foreground">
+                No activities scheduled yet. Go to the Timeline to build your itinerary!
+              </div>
+            ) : (
+              <div className="relative border-l-2 border-primary/20 ml-3 space-y-8 pb-4 max-h-[500px] overflow-y-auto custom-scrollbar pr-4">
+                {scheduledIdeas.map((idea) => (
+                  <div key={idea.id} className="relative pl-6">
+                    <div className="absolute -left-[9px] top-1 h-4 w-4 rounded-full bg-background border-2 border-primary" />
+                    <div className="bg-muted/30 border rounded-xl p-4 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start mb-1">
+                        <h4 className="font-bold text-lg">{idea.title}</h4>
+                        <Badge variant="secondary">{idea.category}</Badge>
+                      </div>
+                      <div className="text-sm font-semibold text-primary mb-2">
+                        {format(parseISO(idea.start_datetime), 'EEEE, MMM d • h:mm a')}
+                      </div>
+                      {idea.location_address && (
+                        <div className="text-sm text-muted-foreground flex items-center gap-1.5 mt-2">
+                          <MapPin className="h-3.5 w-3.5" /> {idea.location_address}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-sm">{member.profiles?.name || 'Unknown User'}</p>
-                    <p className="text-xs text-muted-foreground">{member.role}</p>
-                  </div>
-                </div>
-                
-                {/* SURGICAL EXTRACTION BUTTON */}
-                {isHost && member.user_id !== user?.id && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-muted-foreground hover:text-destructive transition-colors"
-                    onClick={() => handleRemoveMember(member.user_id, member.profiles?.name || 'Unknown User')}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
+                ))}
+              </div>
+            )}
+
+            {/* DOWNLOAD PDF OVERLAY BUTTON */}
+            <div className="absolute bottom-6 right-6">
+              <Button size="lg" className="gap-2 rounded-xl shadow-xl hover:scale-105 transition-transform" onClick={() => toast.info("PDF Generation Engine coming in next phase!")}>
+                <Download className="h-5 w-5" /> Download Brochure
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
