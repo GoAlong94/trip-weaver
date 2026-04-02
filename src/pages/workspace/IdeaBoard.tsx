@@ -1,14 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useTripData } from '@/hooks/useTripData';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Plus, Lightbulb, MapPin, Plane, Star, Sun, BedDouble, ChevronRight, MessageSquare, ArrowRight } from 'lucide-react';
+import { Loader2, Plus, Lightbulb, MapPin, Plane, Star, Sun, BedDouble, MessageSquare, ArrowRight, Check } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import IdeaCardModal from '@/components/IdeaCardModal';
-import { format, parseISO, differenceInDays } from 'date-fns';
+import { format, differenceInDays, differenceInHours } from 'date-fns';
 import { toast } from 'sonner';
 
 const COLUMNS = [
@@ -22,12 +22,12 @@ export default function IdeaBoard() {
   const { tripId } = useParams();
   const { user } = useAuth();
   
-  // Instant Cache Engine
   const { ideas, members, loading, refreshData } = useTripData(tripId);
   const [selectedIdea, setSelectedIdea] = useState<any | null>(null);
 
   if (loading) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
+  // --- RESTORED: CORE LOGIC ---
   const handleUpvote = async (ideaId: string, currentUpvotes: string[]) => {
     if (!user) return;
     try {
@@ -40,27 +40,63 @@ export default function IdeaBoard() {
     }
   };
 
-  // --- SMART CARD RENDERER ---
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData("ideaId", id);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Required to allow dropping
+  };
+
+  const handleDrop = async (e: React.DragEvent, newStatus: string) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData("ideaId");
+    if (!id) return;
+    
+    try {
+      const { error } = await supabase.from('idea_cards').update({ draft_version: newStatus }).eq('id', id);
+      if (error) throw error;
+      refreshData();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to move idea");
+    }
+  };
+
+  // --- CRASH-PROOF SMART CARD RENDERER ---
   const renderSmartCard = (idea: any) => {
     const isUpvoted = idea.upvotes?.includes(user?.id);
-    const hasDates = idea.start_datetime && idea.end_datetime;
+    
+    // SAFETY CHECK: Ensure dates actually exist and are valid before doing math
+    const hasDates = !!(idea.start_datetime && idea.end_datetime);
+    let durationText = '';
+    let nights = 0;
+    
+    if (hasDates) {
+      try {
+        const start = new Date(idea.start_datetime);
+        const end = new Date(idea.end_datetime);
+        nights = differenceInDays(end, start);
+        const hours = differenceInHours(end, start);
+        durationText = hours < 24 ? `${hours}h` : `${nights} Days`;
+      } catch (e) {
+        durationText = 'TBD';
+      }
+    }
 
     return (
       <Card 
         key={idea.id} 
-        className="group hover:shadow-xl transition-all duration-200 border-border/50 bg-card overflow-hidden cursor-pointer"
+        draggable
+        onDragStart={(e) => handleDragStart(e, idea.id)}
+        className="group hover:shadow-xl transition-all duration-200 border-border/50 bg-card overflow-hidden cursor-grab active:cursor-grabbing"
         onClick={() => setSelectedIdea(idea)}
       >
         <CardContent className="p-0">
-          
-          {/* CARD HEADER */}
           <div className="p-4 pb-2">
             <div className="flex justify-between items-start mb-2">
               <h4 className="font-bold text-base leading-tight group-hover:text-primary transition-colors">{idea.title}</h4>
               <Badge variant="secondary" className="text-[10px] uppercase tracking-wider shrink-0 ml-2">{idea.category}</Badge>
             </div>
-
-            {/* DEFAULT LOCATION STRING */}
             {idea.location_address && idea.category !== 'Transportation' && (
               <p className="text-xs text-muted-foreground flex items-start gap-1 mt-1.5 line-clamp-2">
                 <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {idea.location_address}
@@ -68,22 +104,20 @@ export default function IdeaBoard() {
             )}
           </div>
 
-          {/* --- SMART CATEGORY WIDGETS --- */}
-          <div className="px-4 pb-3">
+          <div className="px-4 pb-3 pointer-events-none">
             
-            {/* 1. TRANSPORTATION: Airline Ticket Layout */}
+            {/* TRANSPORTATION WIDGET */}
             {idea.category === 'Transportation' && idea.end_location_address && (
               <div className="mt-2 p-3 bg-muted/40 rounded-lg border border-dashed flex items-center justify-between relative overflow-hidden">
                  <div className="w-2 h-4 rounded-r-full bg-background absolute -left-0 top-1/2 -translate-y-1/2 border border-l-0" />
                  <div className="w-2 h-4 rounded-l-full bg-background absolute -right-0 top-1/2 -translate-y-1/2 border border-r-0" />
-                 
                  <div className="flex-1 pr-2">
                    <p className="text-[10px] text-muted-foreground uppercase">Origin</p>
                    <p className="font-semibold text-sm truncate">{idea.location_address?.split(',')[0] || 'TBD'}</p>
                  </div>
                  <div className="shrink-0 flex flex-col items-center px-2">
                    <Plane className="h-4 w-4 text-primary rotate-45" />
-                   {hasDates && <span className="text-[9px] text-muted-foreground mt-1">{differenceInDays(parseISO(idea.end_datetime), parseISO(idea.start_datetime)) * 24}h</span>}
+                   {hasDates && <span className="text-[9px] text-muted-foreground mt-1">{durationText}</span>}
                  </div>
                  <div className="flex-1 pl-2 text-right">
                    <p className="text-[10px] text-muted-foreground uppercase">Dest</p>
@@ -92,7 +126,7 @@ export default function IdeaBoard() {
               </div>
             )}
 
-            {/* 2. FOOD: Yelp-Style Ratings */}
+            {/* FOOD WIDGET */}
             {idea.category === 'Food' && (
               <div className="mt-2 flex items-center gap-1.5 text-amber-500">
                 <Star className="h-3.5 w-3.5 fill-current" />
@@ -101,21 +135,21 @@ export default function IdeaBoard() {
               </div>
             )}
 
-            {/* 3. LODGING: Check-In/Out Banner */}
+            {/* LODGING WIDGET */}
             {idea.category === 'Lodging' && hasDates && (
               <div className="mt-2 flex items-center justify-between bg-primary/5 border border-primary/20 text-primary p-2 rounded-md">
                 <div className="flex items-center gap-2">
                   <BedDouble className="h-4 w-4" />
-                  <span className="text-xs font-semibold">{differenceInDays(parseISO(idea.end_datetime), parseISO(idea.start_datetime))} Nights</span>
+                  <span className="text-xs font-semibold">{Math.max(1, nights)} Nights</span>
                 </div>
                 <div className="text-[10px] font-medium text-right">
-                  <div>In: {format(parseISO(idea.start_datetime), 'MMM d')}</div>
-                  <div>Out: {format(parseISO(idea.end_datetime), 'MMM d')}</div>
+                  <div>In: {format(new Date(idea.start_datetime), 'MMM d')}</div>
+                  <div>Out: {format(new Date(idea.end_datetime), 'MMM d')}</div>
                 </div>
               </div>
             )}
 
-            {/* 4. LOCATIONS/EXCURSIONS: Weather Widget */}
+            {/* LOCATION WIDGET */}
             {(idea.category === 'Locations' || idea.category === 'Excursions') && hasDates && (
               <div className="mt-3 inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-700 dark:text-blue-400 px-2.5 py-1 rounded-full border border-blue-500/20">
                 <Sun className="h-3.5 w-3.5" />
@@ -125,7 +159,6 @@ export default function IdeaBoard() {
 
           </div>
 
-          {/* CARD FOOTER (VOTING & COMMENTS) */}
           <div className="border-t bg-muted/10 p-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Button 
@@ -142,14 +175,12 @@ export default function IdeaBoard() {
               </div>
             </div>
             
-            {/* Price Tag if assigned */}
             {idea.unit_cost > 0 && (
               <span className="text-xs font-mono font-bold text-foreground">
                 {idea.currency || '₹'}{idea.unit_cost.toLocaleString()}
               </span>
             )}
           </div>
-
         </CardContent>
       </Card>
     );
@@ -174,8 +205,12 @@ export default function IdeaBoard() {
             const Icon = col.icon;
             
             return (
-              <div key={col.id} className="w-80 flex flex-col bg-muted/20 rounded-2xl border border-border/50">
-                {/* Column Header */}
+              <div 
+                key={col.id} 
+                className="w-80 flex flex-col bg-muted/20 rounded-2xl border border-border/50 transition-colors hover:bg-muted/30"
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, col.id)}
+              >
                 <div className="p-4 border-b bg-card/50 rounded-t-2xl flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className={`p-1.5 rounded-md ${col.bg}`}>
@@ -186,11 +221,10 @@ export default function IdeaBoard() {
                   <Badge variant="secondary" className="bg-background">{columnIdeas.length}</Badge>
                 </div>
                 
-                {/* Column Content */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
                   {columnIdeas.map(renderSmartCard)}
                   {columnIdeas.length === 0 && (
-                    <div className="h-24 border-2 border-dashed rounded-xl flex items-center justify-center text-xs text-muted-foreground font-medium">
+                    <div className="h-24 border-2 border-dashed rounded-xl flex items-center justify-center text-xs text-muted-foreground font-medium opacity-50">
                       Drop ideas here
                     </div>
                   )}
