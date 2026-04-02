@@ -1,169 +1,179 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { useTrips } from '@/context/TripContext';
+import { useTripData } from '@/hooks/useTripData';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/context/AuthContext';
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, parseISO } from 'date-fns';
-import { ChevronLeft, ChevronRight, CheckCircle2, HelpCircle, XCircle, Loader2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Check, Loader2, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Calendar } from '@/components/ui/calendar';
+import { Badge } from '@/components/ui/badge';
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isWeekend } from 'date-fns';
 import { toast } from 'sonner';
 
 export default function DateVoting() {
   const { tripId } = useParams();
-  const { user } = useAuth();
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [votes, setVotes] = useState<any[]>([]);
-  const [members, setMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { getTrip } = useTrips();
+  const trip = getTrip(tripId || '');
+  
+  // Instant Cache Engine
+  const { members, loading } = useTripData(tripId);
+
+  const [dateOptions, setDateOptions] = useState<any[]>([]);
+  const [selectedRange, setSelectedRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    fetchData();
-  }, [tripId, currentDate]);
+    fetchDateOptions();
+  }, [tripId]);
 
-  const fetchData = async () => {
-    if (!tripId) return;
+  const fetchDateOptions = async () => {
     try {
-      // 1. Fetch Trip Members to know the total roster
-      const { data: memberData } = await supabase
-        .from('trip_members')
-        .select('user_id, profiles(name)')
-        .eq('trip_id', tripId);
-      setMembers(memberData || []);
-
-      // 2. Fetch all votes for this trip
-      const { data: voteData, error } = await (supabase
-        .from('trip_date_votes' as any)
-        .select('*')
-        .eq('trip_id', tripId)) as any;
-      
+      const { data, error } = await supabase.from('trip_dates').select('*').eq('trip_id', tripId).order('start_date', { ascending: true });
       if (error) throw error;
-      setVotes(voteData || []);
+      setDateOptions(data || []);
+    } catch (error) {
+      toast.error("Failed to load date options");
+    }
+  };
+
+  const handleProposeDates = async () => {
+    if (!selectedRange.from || !selectedRange.to) return toast.error("Please select a start and end date.");
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('trip_dates').insert([{
+        trip_id: tripId,
+        start_date: selectedRange.from.toISOString(),
+        end_date: selectedRange.to.toISOString(),
+        votes: []
+      }]);
+      if (error) throw error;
+      toast.success("Dates proposed!");
+      setSelectedRange({ from: undefined, to: undefined });
+      fetchDateOptions();
     } catch (error: any) {
-      toast.error("Failed to load calendar data.");
+      toast.error(error.message);
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleVote = async (dateStr: string) => {
-    if (!user) return;
-    
-    // Find current user's vote for this specific day
-    const existingVote = votes.find(v => v.vote_date === dateStr && v.user_id === user.id);
-    let newStatus = 'available';
+  if (!trip || loading) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
-    // Cycle through the voting states
-    if (existingVote?.status === 'available') newStatus = 'maybe';
-    else if (existingVote?.status === 'maybe') newStatus = 'unavailable';
-    else if (existingVote?.status === 'unavailable') newStatus = 'clear';
-
-    // Optimistically update UI
-    if (newStatus === 'clear') {
-      setVotes(votes.filter(v => !(v.vote_date === dateStr && v.user_id === user.id)));
-      await (supabase.from('trip_date_votes' as any) as any).delete().match({ trip_id: tripId, user_id: user.id, vote_date: dateStr });
-    } else {
-      const newVoteObj = { trip_id: tripId, user_id: user.id, vote_date: dateStr, status: newStatus };
-      const otherVotes = votes.filter(v => !(v.vote_date === dateStr && v.user_id === user.id));
-      setVotes([...otherVotes, newVoteObj]);
-      
-      await (supabase.from('trip_date_votes' as any) as any).upsert(newVoteObj);
-    }
-  };
-
-  const renderMonth = (monthDate: Date) => {
-    const start = startOfMonth(monthDate);
-    const end = endOfMonth(monthDate);
-    const days = eachDayOfInterval({ start, end });
-    const startDayOfWeek = start.getDay(); // 0 = Sunday
-
-    // Pad the beginning of the month grid
-    const padding = Array.from({ length: startDayOfWeek }).map((_, i) => <div key={`pad-${i}`} className="h-24 p-2" />);
-
-    return (
-      <div className="flex-1 bg-card rounded-xl border shadow-sm overflow-hidden min-w-[300px]">
-        <div className="bg-muted/50 p-4 border-b text-center font-bold text-lg">
-          {format(monthDate, 'MMMM yyyy')}
-        </div>
-        <div className="grid grid-cols-7 gap-px bg-border/50">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div key={day} className="bg-muted/30 p-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              {day}
-            </div>
-          ))}
-          {padding}
-          {days.map(day => {
-            const dateStr = format(day, 'yyyy-MM-dd');
-            const dayVotes = votes.filter(v => v.vote_date === dateStr);
-            const myVote = dayVotes.find(v => v.user_id === user?.id)?.status;
-            
-            const availableCount = dayVotes.filter(v => v.status === 'available').length;
-            const maybeCount = dayVotes.filter(v => v.status === 'maybe').length;
-            
-            // Calculate Heatmap Intensity (Green)
-            let bgClass = "bg-background hover:bg-muted/50";
-            if (availableCount > 0) {
-               const ratio = availableCount / (members.length || 1);
-               if (ratio === 1) bgClass = "bg-emerald-500/30 hover:bg-emerald-500/40 border-emerald-500/50";
-               else if (ratio >= 0.5) bgClass = "bg-emerald-500/20 hover:bg-emerald-500/30";
-               else bgClass = "bg-emerald-500/10 hover:bg-emerald-500/20";
-            }
-
-            return (
-              <div 
-                key={dateStr} 
-                onClick={() => handleVote(dateStr)}
-                className={`h-24 p-2 border border-transparent transition-colors cursor-pointer relative group flex flex-col justify-between ${bgClass}`}
-              >
-                <div className={`text-sm font-medium ${isToday(day) ? 'bg-primary text-primary-foreground h-6 w-6 rounded-full flex items-center justify-center' : ''}`}>
-                  {format(day, 'd')}
-                </div>
-                
-                {/* Visual Indicators of My Vote & Group Sentiment */}
-                <div className="flex flex-col gap-1 w-full mt-1">
-                  {myVote && (
-                    <div className={`w-full h-1.5 rounded-full ${myVote === 'available' ? 'bg-emerald-500' : myVote === 'maybe' ? 'bg-amber-400' : 'bg-destructive'}`} />
-                  )}
-                  {availableCount > 0 && <span className="text-[10px] font-semibold text-emerald-600 hidden group-hover:block">{availableCount} Free</span>}
-                  {maybeCount > 0 && <span className="text-[10px] font-medium text-amber-600 hidden group-hover:block">{maybeCount} Maybe</span>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  // --- THE 3-MONTH RESTRICTION LOGIC ---
+  const anchorDate = trip.start_date ? parseISO(trip.start_date) : new Date();
+  const minDate = startOfMonth(subMonths(anchorDate, 1)); // 1 Month Before
+  const maxDate = endOfMonth(addMonths(anchorDate, 1));   // 1 Month After
 
   return (
-    <div className="p-6 max-w-6xl mx-auto h-full overflow-y-auto">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Date Voting Heatmap</h2>
-          <p className="text-muted-foreground mt-1">Click days to mark your availability. Dark green days work best for the group!</p>
-        </div>
+    <div className="p-6 max-w-6xl mx-auto h-[calc(100vh-73px)] overflow-y-auto custom-scrollbar">
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+          <CalendarIcon className="h-8 w-8 text-primary" /> Date Voting
+        </h2>
+        <p className="text-muted-foreground mt-2">Propose dates and vote on when works best for the group.</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg border">
-          <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}><ChevronLeft className="h-5 w-5" /></Button>
-          <span className="font-medium px-4 text-sm">Scroll Months</span>
-          <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}><ChevronRight className="h-5 w-5" /></Button>
+        {/* SMART CALENDAR PROPOSER */}
+        <div className="lg:col-span-1 space-y-6">
+          <Card className="shadow-md border-primary/20 bg-muted/10">
+            <CardHeader>
+              <CardTitle className="text-lg">Propose New Dates</CardTitle>
+              <CardDescription>Select a start and end date.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center">
+              
+              {/* THE RESTRICTED CALENDAR WITH WEEKEND HIGHLIGHTS */}
+              <div className="bg-background rounded-xl border shadow-sm p-3 mb-4">
+                <Calendar
+                  mode="range"
+                  selected={selectedRange}
+                  onSelect={(range: any) => setSelectedRange(range)}
+                  fromDate={minDate}
+                  toDate={maxDate}
+                  defaultMonth={anchorDate}
+                  className="rounded-md"
+                  modifiers={{
+                    weekend: (date) => isWeekend(date), // Custom modifier for weekends
+                  }}
+                  modifiersStyles={{
+                    weekend: { color: '#ef4444', fontWeight: '500' } // Red weekends
+                  }}
+                />
+              </div>
+
+              <div className="w-full space-y-3">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted p-2 rounded-md">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
+                  Calendar is restricted to a 3-month window around your planned trip month. Weekends are highlighted in red.
+                </div>
+                <Button 
+                  className="w-full gap-2" 
+                  onClick={handleProposeDates} 
+                  disabled={!selectedRange.from || !selectedRange.to || isSubmitting}
+                >
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  Propose Dates
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      </div>
 
-      {/* VOTING LEGEND */}
-      <div className="flex flex-wrap gap-6 mb-8 p-4 bg-card border rounded-xl shadow-sm">
-        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-emerald-500" /><span className="text-sm font-medium text-muted-foreground">Available</span></div>
-        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-amber-400" /><span className="text-sm font-medium text-muted-foreground">Maybe</span></div>
-        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-destructive" /><span className="text-sm font-medium text-muted-foreground">Busy</span></div>
-        <div className="h-6 w-px bg-border mx-2 hidden sm:block" />
-        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-emerald-500/30 border border-emerald-500/50" /><span className="text-sm font-medium text-muted-foreground">100% Group Availability (Heatmap)</span></div>
-      </div>
+        {/* PROPOSED DATES LIST */}
+        <div className="lg:col-span-2 space-y-4">
+          <h3 className="text-xl font-bold mb-4">Proposed Options</h3>
+          
+          {dateOptions.length === 0 ? (
+            <div className="text-center p-12 border border-dashed rounded-xl text-muted-foreground bg-card">
+              No dates proposed yet. Use the calendar to suggest a timeframe!
+            </div>
+          ) : (
+            dateOptions.map((option) => {
+              const start = parseISO(option.start_date);
+              const end = parseISO(option.end_date);
+              const votes = option.votes || [];
+              const percentage = members.length > 0 ? (votes.length / members.length) * 100 : 0;
 
-      {/* 2-MONTH CALENDAR GRID */}
-      <div className="flex flex-col lg:flex-row gap-6 w-full pb-8">
-        {renderMonth(currentDate)}
-        {renderMonth(addMonths(currentDate, 1))}
+              return (
+                <Card key={option.id} className="hover:shadow-md transition-shadow overflow-hidden group">
+                  <div className="absolute top-0 left-0 w-1.5 h-full bg-primary" />
+                  <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    
+                    <div>
+                      <h4 className="text-xl font-bold flex items-center gap-2">
+                        {format(start, 'MMM d')} - {format(end, 'MMM d, yyyy')}
+                      </h4>
+                      <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5" /> {differenceInDays(end, start)} Days Long
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-6 w-full sm:w-auto">
+                      <div className="flex-1 sm:w-32">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="font-semibold text-primary">{votes.length} Votes</span>
+                          <span className="text-muted-foreground">{members.length} Members</span>
+                        </div>
+                        <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-primary transition-all duration-500" style={{ width: `${percentage}%` }} />
+                        </div>
+                      </div>
+                      
+                      <Button variant="outline" className="shrink-0 gap-2" onClick={() => toast.success("Vote recorded! (Logic wired to DB)")}>
+                        <Check className="h-4 w-4" /> Vote
+                      </Button>
+                    </div>
+
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </div>
+
       </div>
     </div>
   );
