@@ -1,22 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTrips } from '@/context/TripContext';
+import { useAuth } from '@/context/AuthContext';
 import { useTripData } from '@/hooks/useTripData';
 import { supabase } from '@/integrations/supabase/client';
 import { Calendar as CalendarIcon, Check, Loader2, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { Badge } from '@/components/ui/badge';
-import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isWeekend } from 'date-fns';
+import { format, differenceInDays, startOfMonth, endOfMonth, addMonths, subMonths, isWeekend } from 'date-fns';
 import { toast } from 'sonner';
 
 export default function DateVoting() {
   const { tripId } = useParams();
+  const { user } = useAuth();
   const { getTrip } = useTrips();
   const trip = getTrip(tripId || '');
   
-  // Instant Cache Engine
   const { members, loading } = useTripData(tripId);
 
   const [dateOptions, setDateOptions] = useState<any[]>([]);
@@ -37,6 +37,7 @@ export default function DateVoting() {
     }
   };
 
+  // --- RESTORED CORE LOGIC ---
   const handleProposeDates = async () => {
     if (!selectedRange.from || !selectedRange.to) return toast.error("Please select a start and end date.");
     setIsSubmitting(true);
@@ -58,12 +59,41 @@ export default function DateVoting() {
     }
   };
 
+  const handleVote = async (dateId: string, currentVotes: string[]) => {
+    if (!user) return;
+    try {
+      const hasVoted = currentVotes.includes(user.id);
+      const newVotes = hasVoted ? currentVotes.filter(id => id !== user.id) : [...currentVotes, user.id];
+      const { error } = await supabase.from('trip_dates').update({ votes: newVotes }).eq('id', dateId);
+      if (error) throw error;
+      fetchDateOptions();
+    } catch (error: any) {
+      toast.error("Failed to vote");
+    }
+  };
+
+  const handleDeleteDate = async (dateId: string) => {
+    try {
+      const { error } = await supabase.from('trip_dates').delete().eq('id', dateId);
+      if (error) throw error;
+      toast.success("Option deleted");
+      fetchDateOptions();
+    } catch (error: any) {
+      toast.error("Failed to delete");
+    }
+  };
+
   if (!trip || loading) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
-  // --- THE 3-MONTH RESTRICTION LOGIC ---
-  const anchorDate = trip.start_date ? parseISO(trip.start_date) : new Date();
-  const minDate = startOfMonth(subMonths(anchorDate, 1)); // 1 Month Before
-  const maxDate = endOfMonth(addMonths(anchorDate, 1));   // 1 Month After
+  // --- CRASH-PROOF 3-MONTH RESTRICTION ---
+  let anchorDate = new Date();
+  try {
+    if (trip.start_date) anchorDate = new Date(trip.start_date);
+  } catch (e) {
+    // Fallback if parsing fails
+  }
+  const minDate = startOfMonth(subMonths(anchorDate, 1)); 
+  const maxDate = endOfMonth(addMonths(anchorDate, 1));
 
   return (
     <div className="p-6 max-w-6xl mx-auto h-[calc(100vh-73px)] overflow-y-auto custom-scrollbar">
@@ -85,7 +115,6 @@ export default function DateVoting() {
             </CardHeader>
             <CardContent className="flex flex-col items-center">
               
-              {/* THE RESTRICTED CALENDAR WITH WEEKEND HIGHLIGHTS */}
               <div className="bg-background rounded-xl border shadow-sm p-3 mb-4">
                 <Calendar
                   mode="range"
@@ -95,25 +124,17 @@ export default function DateVoting() {
                   toDate={maxDate}
                   defaultMonth={anchorDate}
                   className="rounded-md"
-                  modifiers={{
-                    weekend: (date) => isWeekend(date), // Custom modifier for weekends
-                  }}
-                  modifiersStyles={{
-                    weekend: { color: '#ef4444', fontWeight: '500' } // Red weekends
-                  }}
+                  modifiers={{ weekend: (date) => isWeekend(date) }}
+                  modifiersStyles={{ weekend: { color: '#ef4444', fontWeight: '500' } }}
                 />
               </div>
 
               <div className="w-full space-y-3">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted p-2 rounded-md">
                   <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
-                  Calendar is restricted to a 3-month window around your planned trip month. Weekends are highlighted in red.
+                  Calendar restricted to a 3-month window. Weekends are red.
                 </div>
-                <Button 
-                  className="w-full gap-2" 
-                  onClick={handleProposeDates} 
-                  disabled={!selectedRange.from || !selectedRange.to || isSubmitting}
-                >
+                <Button className="w-full gap-2" onClick={handleProposeDates} disabled={!selectedRange.from || !selectedRange.to || isSubmitting}>
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                   Propose Dates
                 </Button>
@@ -122,7 +143,7 @@ export default function DateVoting() {
           </Card>
         </div>
 
-        {/* PROPOSED DATES LIST */}
+        {/* RESTORED PROPOSED DATES LIST */}
         <div className="lg:col-span-2 space-y-4">
           <h3 className="text-xl font-bold mb-4">Proposed Options</h3>
           
@@ -132,16 +153,30 @@ export default function DateVoting() {
             </div>
           ) : (
             dateOptions.map((option) => {
-              const start = parseISO(option.start_date);
-              const end = parseISO(option.end_date);
+              let start, end;
+              try {
+                start = new Date(option.start_date);
+                end = new Date(option.end_date);
+              } catch (e) {
+                return null; // Skip invalid dates
+              }
+
               const votes = option.votes || [];
               const percentage = members.length > 0 ? (votes.length / members.length) * 100 : 0;
+              const hasVoted = user && votes.includes(user.id);
+              const isCreator = user && option.created_by === user.id;
 
               return (
-                <Card key={option.id} className="hover:shadow-md transition-shadow overflow-hidden group">
+                <Card key={option.id} className="hover:shadow-md transition-shadow overflow-hidden group relative">
                   <div className="absolute top-0 left-0 w-1.5 h-full bg-primary" />
+                  
+                  {isCreator && (
+                    <Button variant="ghost" size="icon" className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 hover:bg-destructive hover:text-destructive-foreground transition-all" onClick={() => handleDeleteDate(option.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+
                   <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    
                     <div>
                       <h4 className="text-xl font-bold flex items-center gap-2">
                         {format(start, 'MMM d')} - {format(end, 'MMM d, yyyy')}
@@ -162,18 +197,16 @@ export default function DateVoting() {
                         </div>
                       </div>
                       
-                      <Button variant="outline" className="shrink-0 gap-2" onClick={() => toast.success("Vote recorded! (Logic wired to DB)")}>
-                        <Check className="h-4 w-4" /> Vote
+                      <Button variant={hasVoted ? "default" : "outline"} className="shrink-0 gap-2" onClick={() => handleVote(option.id, votes)}>
+                        <Check className="h-4 w-4" /> {hasVoted ? 'Voted' : 'Vote'}
                       </Button>
                     </div>
-
                   </CardContent>
                 </Card>
               );
             })
           )}
         </div>
-
       </div>
     </div>
   );
