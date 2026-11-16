@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom';
-import { LayoutDashboard, Lightbulb, Clock, TrendingUp, ArrowLeft, CalendarDays, MapIcon, PieChart, Receipt } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
+import { tripSections } from '@/lib/trip-sections';
 import {
   Sidebar,
   SidebarContent,
@@ -11,17 +12,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 
-const tabs = [
-  { title: 'Overview', path: 'overview', icon: LayoutDashboard },
-  { title: 'Dates', path: 'dates', icon: CalendarDays },
-  { title: 'Idea Board', path: 'ideas', icon: Lightbulb },
-  { title: 'Timeline', path: 'timeline', icon: Clock },
-  { title: 'Map View', path: 'map', icon: MapIcon },
-  { title: 'Budget & Forecast', path: 'budget', icon: PieChart },
-  { title: 'The Ledger', path: 'ledger', icon: Receipt },
-];
-
-export default function TripSidebar() {
+export default function TripSidebar({ visibleSections }: { visibleSections: typeof tripSections[number][] }) {
   const { tripId } = useParams();
 
   return (
@@ -45,7 +36,7 @@ export default function TripSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {tabs.map((tab) => (
+              {visibleSections.map((tab) => (
                 <SidebarMenuItem key={tab.path}>
                   <SidebarMenuButton asChild>
                     <NavLink
