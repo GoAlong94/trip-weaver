@@ -343,6 +343,7 @@ export type Database = {
           created_by: string
           end_date: string
           id: string
+          section_visibility: Json
           start_date: string
           start_destination: string
           title: string
@@ -354,6 +355,7 @@ export type Database = {
           created_by: string
           end_date: string
           id?: string
+          section_visibility?: Json
           start_date: string
           start_destination: string
           title: string
@@ -365,6 +367,7 @@ export type Database = {
           created_by?: string
           end_date?: string
           id?: string
+          section_visibility?: Json
           start_date?: string
           start_destination?: string
           title?: string

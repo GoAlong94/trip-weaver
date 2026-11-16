@@ -1,0 +1,4 @@
+- [ ] Add host/member section visibility settings to each trip and enforce section access in workspace navigation.
+- [ ] Add mobile bottom navigation and an auto-closing section drawer without changing desktop navigation.
+- [ ] Clarify settlement direction and amount wording in the ledger.
+- [ ] Verify build, tests, and mobile/desktop navigation states.
