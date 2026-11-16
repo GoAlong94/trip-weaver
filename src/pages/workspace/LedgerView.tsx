@@ -294,12 +294,13 @@ export default function LedgerView() {
                 ) : (
                   settlements.map((s, idx) => (
                     <div key={idx} className="flex items-center justify-between p-4 bg-background border rounded-xl shadow-sm">
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
                         <span className="font-semibold">{getMemberName(s.from)}</span>
-                        <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">pays</span>
+                        <ArrowRightLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <span className="font-semibold">{getMemberName(s.to)}</span>
                       </div>
-                      <div className="font-mono font-bold text-lg text-primary">₹{s.amount.toFixed(2)}</div>
+                      <div className="shrink-0 font-mono font-bold text-lg text-primary">₹{s.amount.toFixed(2)}</div>
                     </div>
                   ))
                 )}
