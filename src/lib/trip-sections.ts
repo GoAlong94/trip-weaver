@@ -1,99 +1,29 @@
 import {
-  LayoutDashboard,
-  Calendar,
-  Lightbulb,
+  CalendarDays,
   Clock,
-  MapPin,
+  LayoutDashboard,
+  Lightbulb,
+  MapIcon,
   PieChart,
   Receipt,
-  LucideIcon,
-} from "lucide-react";
+} from 'lucide-react';
+import type { Json } from '@/integrations/supabase/types';
 
-export type TripSectionKey =
-  | "overview"
-  | "dates"
-  | "ideas"
-  | "timeline"
-  | "map"
-  | "budget"
-  | "ledger";
+export const tripSections = [
+  { title: 'Overview', path: 'overview', key: 'overview', icon: LayoutDashboard },
+  { title: 'Dates', path: 'dates', key: 'dates', icon: CalendarDays },
+  { title: 'Idea Board', path: 'ideas', key: 'ideas', icon: Lightbulb },
+  { title: 'Timeline', path: 'timeline', key: 'timeline', icon: Clock },
+  { title: 'Map View', path: 'map', key: 'map', icon: MapIcon },
+  { title: 'Budget & Forecast', path: 'budget', key: 'budget', icon: PieChart },
+  { title: 'The Ledger', path: 'ledger', key: 'ledger', icon: Receipt },
+] as const;
 
-export interface TripSectionItem {
-  key: TripSectionKey;
-  label: string;
-  shortLabel: string;
-  path: string;
-  icon: LucideIcon;
-}
+export type TripSectionKey = (typeof tripSections)[number]['key'];
+export type SectionVisibility = Record<TripSectionKey, boolean>;
+export type TripSectionVisibility = { host: SectionVisibility; members: SectionVisibility };
 
-export interface SectionVisibilityMap {
-  overview: boolean;
-  dates: boolean;
-  ideas: boolean;
-  timeline: boolean;
-  map: boolean;
-  budget: boolean;
-  ledger: boolean;
-}
-
-export interface TripSectionVisibility {
-  host: SectionVisibilityMap;
-  members: SectionVisibilityMap;
-}
-
-export const tripSections: TripSectionItem[] = [
-  {
-    key: "overview",
-    label: "Overview",
-    shortLabel: "Overview",
-    path: "",
-    icon: LayoutDashboard,
-  },
-  {
-    key: "dates",
-    label: "Dates",
-    shortLabel: "Dates",
-    path: "dates",
-    icon: Calendar,
-  },
-  {
-    key: "ideas",
-    label: "Idea Board",
-    shortLabel: "Ideas",
-    path: "ideas",
-    icon: Lightbulb,
-  },
-  {
-    key: "timeline",
-    label: "Timeline",
-    shortLabel: "Timeline",
-    path: "timeline",
-    icon: Clock,
-  },
-  {
-    key: "map",
-    label: "Map View",
-    shortLabel: "Map",
-    path: "map",
-    icon: MapPin,
-  },
-  {
-    key: "budget",
-    label: "Budget & Forecast",
-    shortLabel: "Budget",
-    path: "budget",
-    icon: PieChart,
-  },
-  {
-    key: "ledger",
-    label: "The Ledger",
-    shortLabel: "Ledger",
-    path: "ledger",
-    icon: Receipt,
-  },
-];
-
-export const DEFAULT_SECTION_MAP: SectionVisibilityMap = {
+export const allSectionsVisible: SectionVisibility = {
   overview: true,
   dates: true,
   ideas: true,
@@ -103,46 +33,22 @@ export const DEFAULT_SECTION_MAP: SectionVisibilityMap = {
   ledger: true,
 };
 
-export const DEFAULT_TRIP_SECTION_VISIBILITY: TripSectionVisibility = {
-  host: { ...DEFAULT_SECTION_MAP },
-  members: { ...DEFAULT_SECTION_MAP },
-};
+export function readSectionVisibility(value: Json | null | undefined): TripSectionVisibility {
+  const parsed = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as { [key: string]: Json | undefined }
+    : {};
+  const readGroup = (group: Json | undefined): SectionVisibility => {
+    const settings = group && typeof group === 'object' && !Array.isArray(group)
+      ? group as { [key: string]: Json | undefined }
+      : {};
 
-export function normalizeSectionVisibility(
-  raw: unknown
-): TripSectionVisibility {
-  if (!raw || typeof raw !== "object") {
-    return {
-      host: { ...DEFAULT_SECTION_MAP },
-      members: { ...DEFAULT_SECTION_MAP },
-    };
-  }
-  const obj = raw as Record<string, any>;
-  const hostRaw = obj.host && typeof obj.host === "object" ? obj.host : {};
-  const membersRaw =
-    obj.members && typeof obj.members === "object" ? obj.members : {};
+    return tripSections.reduce((result, section) => {
+      result[section.key] = typeof settings[section.key] === 'boolean'
+        ? settings[section.key] as boolean
+        : true;
+      return result;
+    }, { ...allSectionsVisible });
+  };
 
-  const host: SectionVisibilityMap = { ...DEFAULT_SECTION_MAP };
-  const members: SectionVisibilityMap = { ...DEFAULT_SECTION_MAP };
-
-  for (const section of tripSections) {
-    if (typeof hostRaw[section.key] === "boolean") {
-      host[section.key] = hostRaw[section.key];
-    }
-    if (typeof membersRaw[section.key] === "boolean") {
-      members[section.key] = membersRaw[section.key];
-    }
-  }
-
-  return { host, members };
-}
-
-export function getVisibleSections(
-  rawVisibility: unknown,
-  isHost: boolean
-): TripSectionItem[] {
-  const normalized = normalizeSectionVisibility(rawVisibility);
-  const targetMap = isHost ? normalized.host : normalized.members;
-  const filtered = tripSections.filter((s) => targetMap[s.key] !== false);
-  return filtered.length > 0 ? filtered : [tripSections[0]];
+  return { host: readGroup(parsed.host), members: readGroup(parsed.members) };
 }

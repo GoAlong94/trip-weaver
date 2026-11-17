@@ -1,141 +1,111 @@
-import { useEffect } from "react";
-import { Outlet, useParams, useLocation, useNavigate } from "react-router-dom";
-import { SidebarProvider } from "@/components/ui/sidebar";
-import TripSidebar from "@/components/TripSidebar";
-import { TripMobileNav } from "@/components/TripMobileNav";
-import { TripSectionSettings } from "@/components/TripSectionSettings";
-import { useTrips } from "@/context/TripContext";
-import { useAuth } from "@/context/AuthContext";
-import { useTripData } from "@/hooks/useTripData";
-import {
-  getVisibleSections,
-  normalizeSectionVisibility,
-  tripSections,
-} from "@/lib/trip-sections";
-import { setLastActiveRoute } from "@/lib/trip-cache";
+import { Outlet, useParams, Navigate, useLocation } from 'react-router-dom';
+import { useTrips } from '@/context/TripContext';
+import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import TripSidebar from '@/components/TripSidebar';
+import { format, parseISO } from 'date-fns';
+import { MapPin, Calendar, Loader2 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { useTripData } from '@/hooks/useTripData';
+import TripMobileNav from '@/components/TripMobileNav';
+import TripSectionSettings from '@/components/TripSectionSettings';
+import { readSectionVisibility, tripSections, type TripSectionVisibility } from '@/lib/trip-sections';
+import { toast } from 'sonner';
+import type { Json } from '@/integrations/supabase/types';
 
 export default function TripWorkspace() {
-  const { tripId } = useParams<{ tripId: string }>();
-  const location = useLocation();
-  const navigate = useNavigate();
+  const { tripId } = useParams();
+  const { getTrip, loading, trips, updateTrip } = useTrips();
   const { user } = useAuth();
-  const { getTrip, loading: tripsLoading, updateTripSectionVisibility } = useTrips();
-  const { isTripHost } = useTripData(tripId);
+  const location = useLocation();
 
-  const trip = tripId ? getTrip(tripId) : undefined;
-  const isHost = Boolean(
-    user && trip && (trip.created_by === user.id || isTripHost)
-  );
+  const trip = getTrip(tripId || '');
+  const { members } = useTripData(tripId);
 
-  const normalizedVisibility = normalizeSectionVisibility(
-    trip?.section_visibility
-  );
-  const visibleSections = getVisibleSections(normalizedVisibility, isHost);
-
-  // Save current workspace route so returning from mobile background resumes here
-  useEffect(() => {
-    if (location.pathname.startsWith("/trip/")) {
-      setLastActiveRoute(location.pathname);
+  // Defensive Date Formatting so parseISO doesn't crash on bad data
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return '';
+    try {
+      return format(parseISO(dateString), 'MMM d');
+    } catch (e) {
+      return '';
     }
-  }, [location.pathname]);
+  };
 
-  // Guard non-host members from navigating directly to disabled sections
-  useEffect(() => {
-    if (!trip || !tripId || isHost) return;
-
-    const subPath = location.pathname
-      .replace(`/trip/${tripId}`, "")
-      .replace(/^\/+/, "");
-
-    const currentSection =
-      tripSections.find((s) => s.path === subPath) || tripSections[0];
-
-    const isAllowed = visibleSections.some((s) => s.key === currentSection.key);
-    if (!isAllowed) {
-      const fallback = visibleSections[0];
-      const nextUrl = fallback?.path
-        ? `/trip/${tripId}/${fallback.path}`
-        : `/trip/${tripId}`;
-      navigate(nextUrl, { replace: true });
-    }
-  }, [trip, tripId, isHost, location.pathname, visibleSections, navigate]);
-
-  // Only show spinner on cold load when trip isn't in cache yet
-  if (!trip && tripsLoading) {
+  // 1. Wait for TripContext to finish fetching
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground text-sm">
-        Opening workspace…
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground font-medium">Loading workspace...</p>
       </div>
     );
   }
 
-  if (!trip || !tripId) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-3 p-4">
-        <p className="text-sm text-muted-foreground">Trip not found.</p>
-        <button
-          onClick={() => navigate("/dashboard")}
-          className="text-sm font-medium text-primary underline"
-        >
-          Back to Dashboard
-        </button>
-      </div>
-    );
+  // 2. If loading is totally finished, and the trip still isn't in the array, redirect safely
+  if (!loading && trips.length > 0 && !trip) {
+    console.warn("Trip not found after loading. Redirecting to Dashboard.");
+    return <Navigate to="/dashboard" replace />;
   }
+
+  // 3. Absolute safety catch: If trips array is totally empty but loading is false
+  if (!trip) {
+     return (
+        <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground font-medium">
+           Synchronizing data...
+        </div>
+     );
+  }
+
+  const isHost = Boolean(user && trip.created_by === user.id);
+  const currentMember = members.find(member => member.user_id === user?.id);
+  const isTripHost = isHost || currentMember?.role === 'Host';
+  const visibility = readSectionVisibility(trip.section_visibility);
+  const visibleSections = tripSections.filter(section =>
+    (isTripHost ? visibility.host[section.key] : visibility.members[section.key]),
+  );
+  const currentPath = location.pathname.split('/').pop();
+  const requestedSection = tripSections.find(section => section.path === currentPath);
+  if (requestedSection && !isTripHost && !visibility.members[requestedSection.key]) {
+    const fallback = visibleSections[0];
+    return <Navigate to={fallback ? `/trip/${trip.id}/${fallback.path}` : '/dashboard'} replace />;
+  }
+
+  const saveVisibility = async (nextVisibility: TripSectionVisibility) => {
+    try {
+      await updateTrip(trip.id, { section_visibility: nextVisibility as Json });
+    } catch {
+      toast.error('Could not save section visibility.');
+      throw new Error('Section visibility save failed');
+    }
+  };
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        {/* Desktop Sidebar respects host's "Your menu" (visibleSections) */}
+      <div className="min-h-screen flex w-full">
         <div className="hidden md:block">
-          <TripSidebar
-            trip={trip}
-            sections={visibleSections}
-            isHost={isHost}
-            settingsSlot={
-              isHost ? (
-                <TripSectionSettings
-                  tripId={trip.id}
-                  visibility={normalizedVisibility}
-                  onSave={updateTripSectionVisibility}
-                />
-              ) : null
-            }
-          />
+          <TripSidebar visibleSections={isTripHost ? tripSections.slice() : visibleSections} />
         </div>
-
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Mobile top header with Host Section Settings button */}
-          <header className="md:hidden sticky top-0 z-20 flex items-center justify-between px-4 h-14 border-b border-border bg-background/95 backdrop-blur">
-            <div className="min-w-0">
-              <h1 className="font-semibold text-sm truncate">{trip.name}</h1>
-              {trip.destination && (
-                <p className="text-xs text-muted-foreground truncate">
-                  {trip.destination}
-                </p>
-              )}
+          <header className="h-14 flex items-center gap-3 border-b bg-card/80 backdrop-blur px-4 sticky top-0 z-20">
+            <SidebarTrigger className="hidden md:flex" />
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xl">{trip.cover_emoji}</span>
+              <h1 className="font-display text-lg font-semibold truncate">{trip.title}</h1>
             </div>
-            {isHost && (
-              <TripSectionSettings
-                tripId={trip.id}
-                visibility={normalizedVisibility}
-                onSave={updateTripSectionVisibility}
-              />
-            )}
+            <div className="ml-auto hidden sm:flex items-center gap-4 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{trip.start_destination}</span>
+              <span className="flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" />
+                {formatDate(trip.start_date)} – {formatDate(trip.end_date)}
+              </span>
+            </div>
+            {isHost && <TripSectionSettings visibility={visibility} onSave={saveVisibility} />}
           </header>
-
-          <main className="flex-1 p-4 md:p-6 pb-24 md:pb-6 overflow-x-hidden">
+          <main className="flex-1 p-4 pb-24 md:p-6">
             <Outlet />
           </main>
         </div>
-
-        {/* Mobile-only Splitwise-style bottom bar + auto-closing drawer */}
-        <TripMobileNav
-          tripId={trip.id}
-          sections={visibleSections}
-          isHost={isHost}
-          allSections={tripSections}
-        />
+        <TripMobileNav visibleSections={visibleSections} />
       </div>
     </SidebarProvider>
   );

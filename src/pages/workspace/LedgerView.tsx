@@ -1,462 +1,312 @@
-import { useState, useMemo } from "react";
-import { useParams } from "react-router-dom";
-import {
-  Plus,
-  Trash2,
-  ArrowRightLeft,
-  Receipt,
-  CheckCircle2,
-  Users,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useTripData } from "@/hooks/useTripData";
-import { useTrips } from "@/context/TripContext";
-import { useAuth } from "@/context/AuthContext";
-import { useToast } from "@/hooks/use-toast";
-
-const CATEGORIES = ["Food", "Transport", "Stay", "Activities", "Shopping", "Misc"];
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
+import { useTripData } from '@/hooks/useTripData';
+import { supabase } from '@/integrations/supabase/client';
+import { Loader2, Receipt, ArrowRightLeft, Plus, Wallet, TrendingDown, TrendingUp, Trash2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 export default function LedgerView() {
-  const { tripId } = useParams<{ tripId: string }>();
+  const { tripId } = useParams();
   const { user } = useAuth();
-  const { getTrip } = useTrips();
-  const { members, expenses, isTripHost, addExpense, deleteExpense } =
-    useTripData(tripId);
-  const { toast } = useToast();
+  
+  // 🔥 THE MAGIC ENGINE 🔥
+  const { members, expenses, loading, refreshData } = useTripData(tripId);
+  
+  // Form State
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState('');
+  const [amount, setAmount] = useState<number | ''>('');
+  const [currency, setCurrency] = useState('₹');
+  const [paidBy, setPaidBy] = useState<string>('');
+  const [splitAmong, setSplitAmong] = useState<string[]>([]);
 
-  const trip = tripId ? getTrip(tripId) : undefined;
-  const canDelete = Boolean(
-    user && ((trip && trip.created_by === user.id) || isTripHost)
-  );
-
-  const [openAdd, setOpenAdd] = useState(false);
-  const [title, setTitle] = useState("");
-  const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState("Food");
-  const [paidBy, setPaidBy] = useState<string>(user?.id || "");
-  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-
-  const memberMap = useMemo(() => {
-    const map = new Map<string, string>();
-    members.forEach((m) => map.set(m.user_id, m.name));
-    return map;
-  }, [members]);
-
-  const handleOpenModal = (isOpen: boolean) => {
-    setOpenAdd(isOpen);
-    if (isOpen) {
-      setPaidBy(user?.id || members[0]?.user_id || "");
-      setSelectedMembers(members.map((m) => m.user_id));
+  // Safely initialize the form defaults ONCE, so they don't wipe out during background refreshes!
+  useEffect(() => {
+    if (members.length > 0 && splitAmong.length === 0) {
+      setSplitAmong(members.map(m => m.user_id));
+      if (user && !paidBy) setPaidBy(user.id);
     }
-  };
+  }, [members, user]);
 
-  const toggleSplitMember = (uid: string) => {
-    setSelectedMembers((prev) =>
-      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
-    );
-  };
-
-  const handleCreateExpense = async (e: React.FormEvent) => {
+  const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    const numericAmount = parseFloat(amount);
-    if (!title.trim() || isNaN(numericAmount) || numericAmount <= 0) return;
-
-    const targetUsers =
-      selectedMembers.length > 0
-        ? selectedMembers
-        : members.map((m) => m.user_id);
-
-    if (targetUsers.length === 0) {
-      toast({
-        title: "Select at least one member",
-        variant: "destructive",
-      });
-      return;
+    if (!title || !amount || !paidBy || splitAmong.length === 0) {
+      return toast.error("Please fill all fields and select who paid.");
     }
 
-    setSubmitting(true);
-    const perPerson = Number((numericAmount / targetUsers.length).toFixed(2));
-    const splits = targetUsers.map((uid, idx) => ({
-      user_id: uid,
-      amount:
-        idx === targetUsers.length - 1
-          ? Number(
-              (numericAmount - perPerson * (targetUsers.length - 1)).toFixed(2)
-            )
-          : perPerson,
-    }));
+    try {
+      const newExp = {
+        trip_id: tripId,
+        title,
+        amount: Number(amount),
+        currency,
+        paid_by: paidBy,
+        split_among: splitAmong
+      };
 
-    const { error } = await addExpense({
-      title: title.trim(),
-      amount: numericAmount,
-      category,
-      paid_by: paidBy || user?.id || targetUsers[0],
-      splits,
-    });
-    setSubmitting(false);
+      const { error } = await supabase.from('expenses').insert([newExp]);
+      if (error) throw error;
 
-    if (error) {
-      toast({
-        title: "Could not add expense",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      setTitle("");
-      setAmount("");
-      setOpenAdd(false);
-      toast({ title: "Expense added" });
+      toast.success("Expense added successfully!");
+      setShowForm(false);
+      setTitle(''); 
+      setAmount('');
+      // Force the global engine to fetch the newest data
+      await refreshData(); 
+    } catch (error: any) {
+      toast.error(error.message);
     }
   };
 
-  // Compute net balances and pairwise minimum-transfer settlements
-  const { totalSpent, netBalances, settlements } = useMemo(() => {
-    const total = expenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
-    const balances = new Map<string, number>();
+  const toggleSplitMember = (memberId: string) => {
+    setSplitAmong(prev => prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]);
+  };
 
-    members.forEach((m) => balances.set(m.user_id, 0));
+  const deleteExpense = async (id: string) => {
+    try {
+      await supabase.from('expenses').delete().eq('id', id);
+      toast.success("Expense deleted");
+      refreshData();
+    } catch (e) {
+      toast.error("Failed to delete");
+    }
+  };
 
-    expenses.forEach((exp) => {
-      const amt = Number(exp.amount || 0);
-      balances.set(exp.paid_by, (balances.get(exp.paid_by) || 0) + amt);
+  const getMemberName = (id: string) => {
+    const m = members.find(m => m.user_id === id);
+    return m?.profiles?.name || 'Unknown User';
+  };
 
-      if (exp.splits && exp.splits.length > 0) {
-        exp.splits.forEach((s) => {
-          balances.set(s.user_id, (balances.get(s.user_id) || 0) - Number(s.amount || 0));
-        });
-      } else if (members.length > 0) {
-        const share = amt / members.length;
-        members.forEach((m) => {
-          balances.set(m.user_id, (balances.get(m.user_id) || 0) - share);
-        });
-      }
+  const calculateBalances = () => {
+    const balances: Record<string, number> = {};
+    members.forEach(m => balances[m.user_id] = 0);
+
+    expenses.forEach(exp => {
+      const splitCount = exp.split_among?.length || 1;
+      const share = exp.amount / splitCount;
+
+      if (balances[exp.paid_by] !== undefined) balances[exp.paid_by] += exp.amount;
+      exp.split_among.forEach((uid: string) => {
+        if (balances[uid] !== undefined) balances[uid] -= share;
+      });
     });
 
-    const debtors: { user_id: string; amount: number }[] = [];
-    const creditors: { user_id: string; amount: number }[] = [];
+    return balances;
+  };
 
-    balances.forEach((val, uid) => {
-      const rounded = Math.round(val * 100) / 100;
-      if (rounded < -0.01) debtors.push({ user_id: uid, amount: Math.abs(rounded) });
-      if (rounded > 0.01) creditors.push({ user_id: uid, amount: rounded });
-    });
-
+  const calculateSettlements = (balances: Record<string, number>) => {
+    const debtors = Object.keys(balances).filter(k => balances[k] < -0.01).map(k => ({ id: k, amount: -balances[k] }));
+    const creditors = Object.keys(balances).filter(k => balances[k] > 0.01).map(k => ({ id: k, amount: balances[k] }));
+    
     debtors.sort((a, b) => b.amount - a.amount);
     creditors.sort((a, b) => b.amount - a.amount);
 
-    const transfers: { from: string; to: string; amount: number }[] = [];
-    let i = 0;
-    let j = 0;
+    const settlements = [];
+    let i = 0; let j = 0;
 
     while (i < debtors.length && j < creditors.length) {
-      const transferAmt = Math.min(debtors[i].amount, creditors[j].amount);
-      if (transferAmt > 0.01) {
-        transfers.push({
-          from: memberMap.get(debtors[i].user_id) || "Member",
-          to: memberMap.get(creditors[j].user_id) || "Member",
-          amount: Number(transferAmt.toFixed(2)),
-        });
-      }
-      debtors[i].amount -= transferAmt;
-      creditors[j].amount -= transferAmt;
-      if (debtors[i].amount < 0.01) i++;
-      if (creditors[j].amount < 0.01) j++;
+      const debtor = debtors[i];
+      const creditor = creditors[j];
+      const amount = Math.min(debtor.amount, creditor.amount);
+
+      settlements.push({ from: debtor.id, to: creditor.id, amount: amount });
+
+      debtor.amount -= amount;
+      creditor.amount -= amount;
+
+      if (debtor.amount < 0.01) i++;
+      if (creditor.amount < 0.01) j++;
     }
 
-    return {
-      totalSpent: total,
-      netBalances: Array.from(balances.entries()).map(([uid, net]) => ({
-        user_id: uid,
-        name: memberMap.get(uid) || "Member",
-        net: Number(net.toFixed(2)),
-      })),
-      settlements: transfers,
-    };
-  }, [expenses, members, memberMap]);
+    return settlements;
+  };
+
+  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+
+  const totalSpent = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+  const balances = calculateBalances();
+  const settlements = calculateSettlements(balances);
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Top Summary Strip */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card border border-border rounded-2xl p-4 sm:p-5">
+    <div className="p-6 h-[calc(100vh-73px)] overflow-y-auto custom-scrollbar relative">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-          <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-            Total Trip Spend
-          </p>
-          <p className="text-2xl sm:text-3xl font-bold font-mono mt-0.5">
-            ₹{totalSpent.toFixed(2)}
-          </p>
+          <h2 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+            <Receipt className="h-8 w-8 text-primary" /> The Ledger
+          </h2>
+          <p className="text-muted-foreground mt-2">Track real expenses and settle debts automatically.</p>
         </div>
+        <Button onClick={() => setShowForm(!showForm)} className="gap-2">
+          {showForm ? 'Cancel' : <><Plus className="h-4 w-4"/> Add Expense</>}
+        </Button>
+      </div>
 
-        <Dialog open={openAdd} onOpenChange={handleOpenModal}>
-          <DialogTrigger asChild>
-            <Button className="gap-2 w-full sm:w-auto">
-              <Plus className="h-4 w-4" />
-              Add Expense
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md max-h-[85dvh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Add Shared Expense</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreateExpense} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="exp-title">Description</Label>
-                <Input
-                  id="exp-title"
-                  placeholder="e.g., Fuel, Dinner at Kasol, Hotel"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="exp-amount">Amount (₹)</Label>
-                  <Input
-                    id="exp-amount"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    required
-                  />
+      {showForm && (
+        <Card className="mb-8 border-primary/20 bg-muted/30 shadow-inner">
+          <CardContent className="pt-6">
+            <form onSubmit={handleAddExpense} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>What was this for?</Label>
+                  <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Dinner at Cafe" required />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Category</Label>
-                  <Select value={category} onValueChange={setCategory}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CATEGORIES.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-2">
+                  <Label>How much did it cost?</Label>
+                  <div className="flex gap-2">
+                    <Select value={currency} onValueChange={setCurrency}>
+                      <SelectTrigger className="w-[80px] bg-background"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="₹">₹</SelectItem>
+                        <SelectItem value="$">$</SelectItem>
+                        <SelectItem value="€">€</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(Number(e.target.value))} required className="bg-background flex-1" />
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label>Paid By</Label>
+              <div className="space-y-2">
+                <Label>Who paid?</Label>
                 <Select value={paidBy} onValueChange={setPaidBy}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select member" />
-                  </SelectTrigger>
+                  <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {members.map((m) => (
-                      <SelectItem key={m.user_id} value={m.user_id}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
+                    {members.map(m => <SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.name || 'Unknown User'}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-1.5">
-                    <Users className="h-3.5 w-3.5" />
-                    Split Equally Among
-                  </Label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSelectedMembers(members.map((m) => m.user_id))
-                    }
-                    className="text-xs text-primary hover:underline"
-                  >
-                    Select all
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto rounded-xl border border-border p-2.5">
-                  {members.map((m) => (
-                    <label
-                      key={m.user_id}
-                      className="flex items-center gap-2.5 text-sm cursor-pointer py-1"
-                    >
-                      <Checkbox
-                        checked={selectedMembers.includes(m.user_id)}
+              <div className="space-y-2 bg-background p-4 rounded-xl border">
+                <Label className="mb-2 block">Split equally among:</Label>
+                <div className="flex flex-wrap gap-4">
+                  {members.map(m => (
+                    <div key={m.user_id} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={`split-${m.user_id}`} 
+                        checked={splitAmong.includes(m.user_id)} 
                         onCheckedChange={() => toggleSplitMember(m.user_id)}
                       />
-                      <span className="truncate">{m.name}</span>
-                    </label>
+                      <label htmlFor={`split-${m.user_id}`} className="text-sm font-medium leading-none cursor-pointer">
+                        {m.profiles?.name || 'Unknown User'}
+                      </label>
+                    </div>
                   ))}
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button type="submit" disabled={submitting} className="w-full">
-                  {submitting ? "Saving…" : "Save Expense"}
-                </Button>
-              </DialogFooter>
+              <Button type="submit" className="w-full">Save Expense</Button>
             </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+          </CardContent>
+        </Card>
+      )}
 
-      <Tabs defaultValue="balances" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+      <Tabs defaultValue="expenses" className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
+          <TabsTrigger value="expenses">Transactions</TabsTrigger>
           <TabsTrigger value="balances">Balances & Settlements</TabsTrigger>
-          <TabsTrigger value="expenses">
-            Expense Feed ({expenses.length})
-          </TabsTrigger>
         </TabsList>
 
-        {/* Balances & How to Settle Up */}
-        <TabsContent value="balances" className="space-y-6 mt-4">
-          <Card className="border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <ArrowRightLeft className="h-4 w-4 text-primary" />
-                How to Settle Up
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {settlements.length === 0 ? (
-                <div className="flex items-center gap-2.5 text-sm text-muted-foreground py-4 justify-center">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                  <span>Everyone is all settled up!</span>
-                </div>
-              ) : (
-                settlements.map((s, idx) => (
-                  <div
-                    key={`${s.from}-${s.to}-${idx}`}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-border bg-muted/30 p-3.5"
-                  >
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-sm leading-snug">
-                      <span className="font-semibold text-foreground break-words">
-                        {s.from}
-                      </span>
-                      <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary shrink-0">
-                        pays
-                        <ArrowRightLeft className="h-3 w-3" />
-                      </span>
-                      <span className="font-semibold text-foreground break-words">
-                        {s.to}
-                      </span>
-                    </div>
+        <TabsContent value="expenses" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+             <Card className="md:col-span-3 bg-card border shadow-sm">
+               <CardContent className="p-6 flex items-center justify-between">
+                 <div>
+                   <p className="text-muted-foreground font-medium text-sm uppercase tracking-wider">Total Realized Spend</p>
+                   <h3 className="text-4xl font-bold mt-2 font-mono">₹{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                 </div>
+                 <div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center">
+                   <Wallet className="h-6 w-6 text-primary" />
+                 </div>
+               </CardContent>
+             </Card>
+          </div>
 
-                    <div className="flex items-center justify-end sm:justify-start shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-border/50">
-                      <span className="rounded-lg bg-primary/15 px-2.5 py-1 font-mono text-sm font-bold text-primary">
-                        ₹{s.amount.toFixed(2)}
-                      </span>
+          <div className="space-y-3">
+            {expenses.length === 0 ? (
+               <div className="text-center p-12 text-muted-foreground border rounded-xl border-dashed">
+                 No expenses tracked yet. Add one to see the magic happen!
+               </div>
+            ) : (
+              expenses.map(exp => (
+                <div key={exp.id} className="flex items-center justify-between p-4 rounded-xl border bg-card hover:shadow-md transition-shadow group">
+                  <div className="flex gap-4 items-center">
+                    <div className="h-10 w-10 bg-muted rounded-full flex items-center justify-center shrink-0">
+                      <Receipt className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold">{exp.title}</h4>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Paid by <span className="font-medium text-foreground">{getMemberName(exp.paid_by)}</span> 
+                        {' • '} {format(new Date(exp.created_at), 'MMM d, h:mm a')}
+                      </p>
                     </div>
                   </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Net Member Balances</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2.5">
-              {netBalances.map((b) => (
-                <div
-                  key={b.user_id}
-                  className="flex items-center justify-between gap-3 py-2 border-b border-border/50 last:border-0 text-sm"
-                >
-                  <span className="font-medium truncate min-w-0">{b.name}</span>
-                  <span
-                    className={`font-mono font-semibold shrink-0 ${
-                      b.net > 0.01
-                        ? "text-emerald-500"
-                        : b.net < -0.01
-                        ? "text-destructive"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {b.net > 0.01
-                      ? `+₹${b.net.toFixed(2)}`
-                      : b.net < -0.01
-                      ? `-₹${Math.abs(b.net).toFixed(2)}`
-                      : "₹0.00"}
-                  </span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Expense Feed */}
-        <TabsContent value="expenses" className="space-y-3 mt-4">
-          {expenses.length === 0 ? (
-            <Card className="border-border">
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                <Receipt className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                No expenses logged yet. Tap &ldquo;Add Expense&rdquo; to start.
-              </CardContent>
-            </Card>
-          ) : (
-            expenses.map((exp) => (
-              <div
-                key={exp.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3.5"
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-sm truncate">{exp.title}</p>
-                    <Badge variant="secondary" className="text-[11px]">
-                      {exp.category}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground truncate">
-                    Paid by <span className="font-medium text-foreground">{exp.paid_by_name}</span>
-                    {exp.splits?.length
-                      ? ` • Split with ${exp.splits.length} ${
-                          exp.splits.length === 1 ? "person" : "people"
-                        }`
-                      : ""}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="font-mono font-bold text-sm">
-                    ₹{Number(exp.amount).toFixed(2)}
-                  </span>
-                  {canDelete && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => deleteExpense(exp.id)}
-                      title="Delete expense (Host)"
-                    >
+                  <div className="text-right flex items-center gap-4">
+                    <div className="font-mono font-bold text-lg">{exp.currency}{exp.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <Button variant="ghost" size="icon" onClick={() => deleteExpense(exp.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity">
                       <Trash2 className="h-4 w-4" />
                     </Button>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ))
-          )}
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="balances">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <Card className="shadow-sm">
+              <CardHeader><CardTitle>Net Balances</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                {Object.keys(balances).map(uid => {
+                  const balance = balances[uid];
+                  const isPositive = balance > 0.01;
+                  const isNegative = balance < -0.01;
+                  const isSettled = Math.abs(balance) <= 0.01;
+
+                  return (
+                    <div key={uid} className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
+                      <div className="font-medium">{getMemberName(uid)}</div>
+                      <div className={`flex items-center gap-2 font-mono font-bold ${isPositive ? 'text-emerald-500' : isNegative ? 'text-destructive' : 'text-muted-foreground'}`}>
+                        {isPositive ? <TrendingUp className="h-4 w-4" /> : isNegative ? <TrendingDown className="h-4 w-4" /> : null}
+                        {isSettled ? 'Settled Up' : `${balance > 0 ? '+' : ''}₹${Math.abs(balance).toFixed(2)}`}
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm border-primary/20 bg-primary/5">
+              <CardHeader><CardTitle className="flex items-center gap-2"><ArrowRightLeft className="h-5 w-5 text-primary" /> How to Settle Up</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                {settlements.length === 0 ? (
+                  <div className="text-center p-6 text-muted-foreground">Everyone is completely settled up! 🍻</div>
+                ) : (
+                  settlements.map((s, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-4 bg-background border rounded-xl shadow-sm">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="font-semibold">{getMemberName(s.from)}</span>
+                        <span className="text-sm text-muted-foreground">pays</span>
+                        <ArrowRightLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="font-semibold">{getMemberName(s.to)}</span>
+                      </div>
+                      <div className="shrink-0 font-mono font-bold text-lg text-primary">₹{s.amount.toFixed(2)}</div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

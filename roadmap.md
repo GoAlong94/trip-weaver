@@ -1,6 +1,4 @@
-- [x] Add host/member section visibility settings to each trip and enforce section access in workspace navigation.
-- [x] Add mobile bottom navigation and an auto-closing section drawer without changing desktop navigation.
-- [ ] Finish mobile session resume and instant cached workspace loading without weakening authentication.
-- [ ] Fix settlement card text collisions while preserving payer-to-receiver direction and exact amounts.
-- [ ] Add the Wanderloom airplane app icon and home-screen metadata.
+- [ ] Add host/member section visibility settings to each trip and enforce section access in workspace navigation.
+- [ ] Add mobile bottom navigation and an auto-closing section drawer without changing desktop navigation.
+- [ ] Clarify settlement direction and amount wording in the ledger.
 - [ ] Verify build, tests, and mobile/desktop navigation states.

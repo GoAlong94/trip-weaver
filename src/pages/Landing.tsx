@@ -1,101 +1,98 @@
-import { useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Plane, Calendar, Users, Receipt, ArrowRight, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/context/AuthContext";
-import { getLastActiveRoute } from "@/lib/trip-cache";
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Plane, ArrowRight, Map, Users, Wallet } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/context/AuthContext'; // Import the Auth context
+
+const features = [
+  { icon: Map, title: 'Plan Visually', desc: 'Kanban boards & day-by-day timelines' },
+  { icon: Users, title: 'Collaborate', desc: 'Invite friends, plan together in real-time' },
+  { icon: Wallet, title: 'Split Costs', desc: 'Track expenses, settle up fairly' },
+];
 
 export default function Landing() {
-  const { user, loading } = useAuth();
   const navigate = useNavigate();
-
-  // Immediately resume into the app when user already has an active session
-  useEffect(() => {
-    if (!loading && user) {
-      const lastRoute = getLastActiveRoute();
-      navigate(lastRoute || "/dashboard", { replace: true });
-    }
-  }, [user, loading, navigate]);
-
-  if (!loading && user) {
-    return null;
-  }
+  const { session } = useAuth(); // Safely pull session
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <header className="border-b border-border/60 backdrop-blur-sm sticky top-0 z-30 bg-background/80">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 font-bold text-lg tracking-tight">
-            <div className="h-9 w-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
-              <Plane className="h-5 w-5" />
-            </div>
-            <span>Wanderloom</span>
-          </Link>
-          <div className="flex items-center gap-3">
-            {user ? (
-              <Button asChild size="sm">
-                <Link to="/dashboard">Go to Dashboard</Link>
-              </Button>
-            ) : (
-              <>
-                <Button asChild variant="ghost" size="sm">
-                  <Link to="/auth">Sign In</Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link to="/auth">Get Started</Link>
-                </Button>
-              </>
-            )}
-          </div>
+    <div className="min-h-screen gradient-hero flex flex-col">
+      <header className="flex items-center justify-between px-6 py-4 md:px-12">
+        <div className="flex items-center gap-2 text-primary-foreground">
+          <Plane className="h-6 w-6 text-primary" />
+          <span className="text-lg font-semibold tracking-tight text-primary-foreground">Wanderloom</span>
         </div>
+        {session ? (
+          <Button
+            variant="outline"
+            className="border-primary/30 text-primary-foreground hover:bg-primary/10 hover:text-primary"
+            onClick={() => navigate('/dashboard')}
+          >
+            Dashboard
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            className="border-primary/30 text-primary-foreground hover:bg-primary/10 hover:text-primary"
+            onClick={() => navigate('/auth')}
+          >
+            Sign In
+          </Button>
+        )}
       </header>
 
-      <main className="flex-1 flex flex-col justify-center">
-        <section className="container mx-auto px-4 py-16 md:py-24 text-center max-w-3xl">
-          <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3.5 py-1.5 text-xs font-medium text-primary mb-6">
-            <Sparkles className="h-3.5 w-3.5" />
-            Plan trips & split expenses effortlessly
-          </div>
-          <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-6">
-            Every trip, expense & settlement in one workspace.
+      <main className="flex-1 flex flex-col items-center justify-center px-6 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: 'easeOut' }}
+          className="max-w-2xl"
+        >
+          <h1 className="text-4xl md:text-6xl font-bold text-primary-foreground leading-tight mb-6">
+            Plan trips that
+            <span className="text-primary"> actually happen</span>
           </h1>
-          <p className="text-base md:text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Create a trip, invite your crew, log shared expenses in seconds, and see exact who-pays-who settlements without spreadsheet chaos.
+          <p className="text-lg md:text-xl text-primary-foreground/60 mb-10 max-w-lg mx-auto">
+            Organize itineraries, coordinate with friends, and split costs — all in one beautiful workspace.
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Button asChild size="lg" className="w-full sm:w-auto gap-2">
-              <Link to={user ? "/dashboard" : "/auth"}>
-                Start Planning Free
-                <ArrowRight className="h-4 w-4" />
-              </Link>
+          
+          {session ? (
+            <Button
+              size="lg"
+              className="gradient-warm text-primary-foreground shadow-warm px-8 py-6 text-base font-semibold gap-2"
+              onClick={() => navigate('/dashboard')}
+            >
+              Go to Dashboard <ArrowRight className="h-4 w-4" />
             </Button>
-          </div>
+          ) : (
+             <Button
+              size="lg"
+              className="gradient-warm text-primary-foreground shadow-warm px-8 py-6 text-base font-semibold gap-2"
+              onClick={() => navigate('/auth')}
+            >
+              Get Started <ArrowRight className="h-4 w-4" />
+            </Button>
+          )}
+        </motion.div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-14 text-left">
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <Receipt className="h-5 w-5 text-primary mb-2.5" />
-              <h3 className="font-semibold text-sm mb-1">Smart Ledger & Splits</h3>
-              <p className="text-xs text-muted-foreground">
-                Split equally or across selected members with automatic debt simplification.
-              </p>
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.3 }}
+          className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-20 max-w-3xl w-full"
+        >
+          {features.map((f) => (
+            <div key={f.title} className="rounded-xl border border-primary-foreground/10 bg-primary-foreground/5 backdrop-blur-sm p-6 text-left">
+              <f.icon className="h-8 w-8 text-primary mb-3" />
+              <h3 className="text-primary-foreground font-semibold mb-1 font-sans text-base">{f.title}</h3>
+              <p className="text-primary-foreground/50 text-sm">{f.desc}</p>
             </div>
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <Users className="h-5 w-5 text-primary mb-2.5" />
-              <h3 className="font-semibold text-sm mb-1">Host Menu Control</h3>
-              <p className="text-xs text-muted-foreground">
-                Keep the mobile view lean—toggle optional planning modules on or off per trip.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <Calendar className="h-5 w-5 text-primary mb-2.5" />
-              <h3 className="font-semibold text-sm mb-1">Home Screen Web App</h3>
-              <p className="text-xs text-muted-foreground">
-                Install directly to your phone home screen for instant 0ms access on the road.
-              </p>
-            </div>
-          </div>
-        </section>
+          ))}
+        </motion.div>
       </main>
+
+      <footer className="py-6 text-center text-primary-foreground/30 text-sm">
+        © 2026 Wanderloom
+      </footer>
     </div>
   );
 }

@@ -1,147 +1,89 @@
-import { useState, useEffect } from "react";
-import { SlidersHorizontal } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { useState } from 'react';
+import { Settings2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  TripSectionVisibility,
-  tripSections,
-  TripSectionKey,
-} from "@/lib/trip-sections";
-import { useToast } from "@/hooks/use-toast";
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { tripSections, type SectionVisibility, type TripSectionVisibility } from '@/lib/trip-sections';
 
 interface TripSectionSettingsProps {
-  tripId: string;
   visibility: TripSectionVisibility;
-  onSave: (tripId: string, next: TripSectionVisibility) => Promise<boolean>;
+  onSave: (visibility: TripSectionVisibility) => Promise<void>;
 }
 
-export function TripSectionSettings({
-  tripId,
-  visibility,
-  onSave,
-}: TripSectionSettingsProps) {
+export default function TripSectionSettings({ visibility, onSave }: TripSectionSettingsProps) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<TripSectionVisibility>(visibility);
+  const [draft, setDraft] = useState(visibility);
   const [saving, setSaving] = useState(false);
-  const { toast } = useToast();
 
-  useEffect(() => {
-    setDraft(visibility);
-  }, [visibility, open]);
-
-  const toggleSection = (
-    target: "host" | "members",
-    key: TripSectionKey,
-    checked: boolean
-  ) => {
-    setDraft((prev) => ({
-      ...prev,
-      [target]: {
-        ...prev[target],
-        [key]: checked,
-      },
-    }));
+  const updateGroup = (group: 'host' | 'members', key: keyof SectionVisibility, checked: boolean) => {
+    setDraft(current => ({ ...current, [group]: { ...current[group], [key]: checked } }));
   };
 
-  const handleSave = async () => {
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) setDraft(visibility);
+    setOpen(nextOpen);
+  };
+
+  const save = async () => {
     setSaving(true);
-    const ok = await onSave(tripId, draft);
-    setSaving(false);
-    if (ok) {
-      toast({
-        title: "Menu visibility updated",
-        description: "Trip navigation has been updated for you and trip members.",
-      });
+    try {
+      await onSave(draft);
       setOpen(false);
-    } else {
-      toast({
-        title: "Could not save settings",
-        description: "Please try again.",
-        variant: "destructive",
-      });
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5 h-8 px-2.5 text-xs"
-          title="Configure visible trip menus"
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          <span>Menus</span>
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md max-h-[85dvh] flex flex-col p-0 overflow-hidden">
-        <DialogHeader className="px-5 pt-5 pb-2">
-          <DialogTitle>Trip Menu Visibility (Host)</DialogTitle>
-          <DialogDescription>
-            Choose which trip menus appear in your own navigation and which ones are shown to members.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-y-auto px-5 py-2 space-y-2">
-          <div className="grid grid-cols-12 items-center text-xs font-semibold text-muted-foreground pb-2 border-b border-border">
-            <span className="col-span-6">Section</span>
-            <span className="col-span-3 text-center">Your Menu</span>
-            <span className="col-span-3 text-center">Members</span>
-          </div>
-
-          {tripSections.map((section) => {
-            const Icon = section.icon;
-            return (
-              <div
-                key={section.key}
-                className="grid grid-cols-12 items-center py-2.5 border-b border-border/50 last:border-0"
-              >
-                <div className="col-span-6 flex items-center gap-2.5 min-w-0 pr-2">
-                  <Icon className="h-4 w-4 text-primary shrink-0" />
-                  <span className="text-sm font-medium truncate">
-                    {section.label}
-                  </span>
-                </div>
-                <div className="col-span-3 flex justify-center">
-                  <Checkbox
-                    checked={draft.host[section.key]}
-                    onCheckedChange={(v) =>
-                      toggleSection("host", section.key, Boolean(v))
-                    }
-                  />
-                </div>
-                <div className="col-span-3 flex justify-center">
-                  <Checkbox
-                    checked={draft.members[section.key]}
-                    onCheckedChange={(v) =>
-                      toggleSection("members", section.key, Boolean(v))
-                    }
-                  />
-                </div>
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label="Section visibility settings"
+        title="Section visibility settings"
+        onClick={() => handleOpenChange(true)}
+      >
+        <Settings2 className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Section visibility</DialogTitle>
+            <DialogDescription>Choose which sections appear in each trip menu.</DialogDescription>
+          </DialogHeader>
+          {(['host', 'members'] as const).map(group => (
+            <section key={group} className="space-y-3">
+              <h3 className="font-semibold">{group === 'host' ? 'Your menu' : 'Member menus'}</h3>
+              <div className="grid grid-cols-1 gap-2">
+                {tripSections.map(section => {
+                  const id = `${group}-${section.key}`;
+                  return (
+                    <div key={id} className="flex min-h-10 items-center gap-3">
+                      <Checkbox
+                        id={id}
+                        checked={draft[group][section.key]}
+                        onCheckedChange={checked => updateGroup(group, section.key, checked === true)}
+                      />
+                      <Label htmlFor={id} className="cursor-pointer font-normal">{section.title}</Label>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-
-        <DialogFooter className="px-5 py-3 border-t border-border bg-muted/30 flex-row justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
-            Cancel
+            </section>
+          ))}
+          <Button type="button" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : 'Save changes'}
           </Button>
-          <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save changes"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
