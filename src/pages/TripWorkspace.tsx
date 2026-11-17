@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, useParams, useLocation, useNavigate } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { TripSidebar } from "@/components/TripSidebar";
+import TripSidebar from "@/components/TripSidebar";
 import { TripMobileNav } from "@/components/TripMobileNav";
 import { TripSectionSettings } from "@/components/TripSectionSettings";
 import { useTrips } from "@/context/TripContext";
