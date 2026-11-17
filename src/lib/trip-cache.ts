@@ -1,46 +1,58 @@
-import type { Tables } from '@/integrations/supabase/types';
+const TRIPS_LIST_KEY = "wanderloom:trips-list:v1";
+const TRIP_DETAIL_PREFIX = "wanderloom:trip-data:v1:";
+const LAST_ROUTE_KEY = "wanderloom:last-route:v1";
 
-type Trip = Tables<'trips'>;
+const memoryCache = new Map<string, unknown>();
 
-const CACHE_PREFIX = 'plansplit:trip-cache:';
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-interface TripCache {
-  savedAt: number;
-  trips: Trip[];
-}
-
-export function readTripCache(userId: string, now = Date.now()): Trip[] | null {
+export function readCache<T>(key: string): T | null {
+  if (memoryCache.has(key)) {
+    return memoryCache.get(key) as T;
+  }
+  if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(`${CACHE_PREFIX}${userId}`);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return null;
-
-    const cache: unknown = JSON.parse(raw);
-    if (
-      typeof cache !== 'object' ||
-      cache === null ||
-      !('savedAt' in cache) ||
-      typeof cache.savedAt !== 'number' ||
-      !('trips' in cache) ||
-      !Array.isArray(cache.trips) ||
-      now - cache.savedAt > CACHE_TTL_MS ||
-      cache.savedAt > now
-    ) {
-      localStorage.removeItem(`${CACHE_PREFIX}${userId}`);
-      return null;
-    }
-
-    return cache.trips as Trip[];
+    const parsed = JSON.parse(raw) as T;
+    memoryCache.set(key, parsed);
+    return parsed;
   } catch {
     return null;
   }
 }
 
-export function writeTripCache(userId: string, trips: Trip[], now = Date.now()): void {
+export function writeCache<T>(key: string, value: T): void {
+  memoryCache.set(key, value);
+  if (typeof window === "undefined") return;
   try {
-    const cache: TripCache = { savedAt: now, trips };
-    localStorage.setItem(`${CACHE_PREFIX}${userId}`, JSON.stringify(cache));
+    window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Caching is optional; authenticated server data remains authoritative.
+    // Ignore storage quota errors
   }
+}
+
+export function getCachedTrips<T = any[]>(): T | null {
+  return readCache<T>(TRIPS_LIST_KEY);
+}
+
+export function setCachedTrips<T = any[]>(trips: T): void {
+  writeCache(TRIPS_LIST_KEY, trips);
+}
+
+export function getCachedTripBundle<T = any>(tripId: string): T | null {
+  if (!tripId) return null;
+  return readCache<T>(`${TRIP_DETAIL_PREFIX}${tripId}`);
+}
+
+export function setCachedTripBundle<T = any>(tripId: string, bundle: T): void {
+  if (!tripId) return;
+  writeCache(`${TRIP_DETAIL_PREFIX}${tripId}`, bundle);
+}
+
+export function setLastActiveRoute(path: string): void {
+  if (!path || path === "/" || path.startsWith("/auth")) return;
+  writeCache(LAST_ROUTE_KEY, path);
+}
+
+export function getLastActiveRoute(): string | null {
+  return readCache<string>(LAST_ROUTE_KEY);
 }
