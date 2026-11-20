@@ -293,14 +293,14 @@ export default function LedgerView() {
                   <div className="text-center p-6 text-muted-foreground">Everyone is completely settled up! 🍻</div>
                 ) : (
                   settlements.map((s, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 bg-background border rounded-xl shadow-sm">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="font-semibold">{getMemberName(s.from)}</span>
+                    <div key={idx} className="flex flex-col gap-2 p-4 bg-background border rounded-xl shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="min-w-0 break-words font-semibold">{getMemberName(s.from)}</span>
                         <span className="text-sm text-muted-foreground">pays</span>
                         <ArrowRightLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <span className="font-semibold">{getMemberName(s.to)}</span>
+                        <span className="min-w-0 break-words font-semibold">{getMemberName(s.to)}</span>
                       </div>
-                      <div className="shrink-0 font-mono font-bold text-lg text-primary">₹{s.amount.toFixed(2)}</div>
+                      <div className="max-w-full shrink-0 self-end whitespace-nowrap font-mono font-bold text-lg text-primary sm:self-auto">₹{s.amount.toFixed(2)}</div>
                     </div>
                   ))
                 )}
