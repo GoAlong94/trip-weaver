@@ -253,7 +253,7 @@ export default function Overview() {
                   <span className="text-muted-foreground">Actual Spend</span>
                   <span className="font-bold">₹{totalActualSpend.toLocaleString()}</span>
                 </div>
-                <Progress value={budgetPercentage} className="h-3" indicatorColor={budgetPercentage > 100 ? 'bg-destructive' : 'bg-primary'} />
+                <Progress value={budgetPercentage} className="h-3" indicatorClassName={budgetPercentage > 100 ? 'bg-destructive' : 'bg-primary'} />
                 <div className="flex justify-between text-xs mt-2">
                   <span className="text-muted-foreground">0</span>
                   <span className="text-muted-foreground">Planned: ₹{totalPlannedBudget.toLocaleString()}</span>
